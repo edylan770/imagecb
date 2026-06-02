@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .prose-chat p {
+    @apply mb-2 last:mb-0;
+  }
+  .prose-chat ul {
+    @apply list-disc pl-5 mb-2;
+  }
+  .prose-chat strong {
+    @apply font-semibold text-slate-800;
+  }
+}

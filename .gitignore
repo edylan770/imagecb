@@ -1,0 +1,39 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/
+*.egg-info/
+.DS_Store
+frontend/node_modules/
+frontend/dist/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Frontend build artifacts
+frontend/tsconfig.tsbuildinfo
+
+# Python packaging / tooling
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+
+# Secrets / cloud credentials
+.aws/
+*.pem
+*.key
+credentials.json
+secrets.json
+
+# IDE / OS
+.idea/
+.vscode/
+Thumbs.db
+desktop.ini
+*.log

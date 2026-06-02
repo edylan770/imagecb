@@ -1,0 +1,128 @@
+"""Tests for multi-turn session behavior."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+from imagecb.retrieval.hybrid import Candidate, SearchOutcome
+from imagecb.retrieval.query_parser import QuerySpec, SourceFilters
+from imagecb.retrieval.session import ChatSession, _merge_filters
+
+
+def _spec(
+    *,
+    semantic_query: str = "",
+    is_refinement: bool = False,
+    filename_contains: list[str] | None = None,
+) -> QuerySpec:
+    return QuerySpec(
+        semantic_query=semantic_query,
+        raw_text=semantic_query,
+        is_refinement=is_refinement,
+        source_filters=SourceFilters(filename_contains=filename_contains or []),
+    )
+
+
+def test_merge_filters_only_when_refinement_turn():
+    prev = _spec(filename_contains=["Q3_Review.pptx"])
+    fresh = _spec(semantic_query="cybersecurity", is_refinement=False)
+    assert fresh.source_filters.filename_contains == []
+
+    refined = _spec(semantic_query="only charts", is_refinement=True)
+    merged = _merge_filters(prev, refined)
+    assert merged.source_filters.filename_contains == ["Q3_Review.pptx"]
+
+
+@patch("imagecb.retrieval.session.rerank")
+@patch("imagecb.retrieval.session.search")
+@patch("imagecb.retrieval.session.parse_query")
+def test_fresh_turn_searches_full_corpus(mock_parse, mock_search, mock_rerank):
+    session = ChatSession()
+    session.last_spec = _spec(filename_contains=["Q3_Review.pptx"])
+    session.last_candidate_ids = ["img-1", "img-2"]
+
+    mock_parse.return_value = _spec(semantic_query="cybersecurity", is_refinement=False)
+    mock_search.return_value = SearchOutcome(
+        candidates=[Candidate(image_id="img-9", fused_score=0.5)]
+    )
+    mock_rerank.return_value = []
+
+    session.ask("cybersecurity")
+
+    mock_search.assert_called_once()
+    _, kwargs = mock_search.call_args
+    assert kwargs.get("restrict_to") is None
+
+
+@patch("imagecb.retrieval.session.rerank")
+@patch("imagecb.retrieval.session.search")
+@patch("imagecb.retrieval.session.parse_query")
+def test_refinement_turn_restricts_to_previous_pool(mock_parse, mock_search, mock_rerank):
+    session = ChatSession()
+    session.last_candidate_ids = ["img-1", "img-2"]
+
+    mock_parse.return_value = _spec(semantic_query="only the charts", is_refinement=True)
+    mock_search.return_value = SearchOutcome(
+        candidates=[Candidate(image_id="img-1", fused_score=0.5)]
+    )
+    mock_rerank.return_value = []
+
+    session.ask("only the charts")
+
+    mock_search.assert_called_once()
+    _, kwargs = mock_search.call_args
+    assert kwargs.get("restrict_to") == ["img-1", "img-2"]
+
+
+@patch("imagecb.retrieval.session.rerank")
+@patch("imagecb.retrieval.session.search")
+@patch("imagecb.retrieval.session.parse_query")
+def test_ask_passes_min_match_percent_to_rerank(mock_parse, mock_search, mock_rerank):
+    from imagecb.retrieval.rerank import RankedResult
+
+    session = ChatSession()
+    mock_parse.return_value = _spec(semantic_query="cybersecurity")
+    mock_search.return_value = SearchOutcome(
+        candidates=[Candidate(image_id="img-1", fused_score=0.5)]
+    )
+    mock_rerank.return_value = [
+        RankedResult(
+            image_id="img-1",
+            score=0.9,
+            record=MagicMock(),
+            provenance_line="Slide 1",
+        )
+    ]
+
+    session.ask("cybersecurity", min_match_percent=80)
+
+    assert mock_rerank.call_count == 1
+    _, kwargs = mock_rerank.call_args
+    assert kwargs.get("min_score") == 0.8
+
+
+@patch("imagecb.retrieval.session.rerank")
+@patch("imagecb.retrieval.session.search")
+@patch("imagecb.retrieval.session.parse_query")
+def test_ask_relaxes_min_score_when_all_filtered(mock_parse, mock_search, mock_rerank):
+    from imagecb.retrieval.rerank import RankedResult
+
+    session = ChatSession()
+    mock_parse.return_value = _spec(semantic_query="charts")
+    mock_search.return_value = SearchOutcome(
+        candidates=[Candidate(image_id="img-1", fused_score=0.5)]
+    )
+    ranked = RankedResult(
+        image_id="img-1",
+        score=0.5,
+        record=MagicMock(),
+        provenance_line="Slide 1",
+    )
+    mock_rerank.side_effect = [[], [ranked]]
+
+    result = session.ask("charts", min_match_percent=80)
+
+    assert mock_rerank.call_count == 2
+    assert result.relaxed_min_score is True
+    assert result.filtered_by_min_score is True
+    assert len(result.results) == 1
