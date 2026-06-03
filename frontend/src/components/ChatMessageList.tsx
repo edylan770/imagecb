@@ -21,7 +21,7 @@ export function ChatMessageList({
   }, [selectedTurnId]);
 
   return (
-    <div className="flex flex-col gap-3 p-4">
+    <div className="flex flex-col gap-3 px-5 py-4">
       {messages.map((m, i) => {
         const turnId = m.turnId;
         const selected = turnId != null && turnId === selectedTurnId;
@@ -34,10 +34,10 @@ export function ChatMessageList({
             type="button"
             disabled={!clickable}
             onClick={() => turnId && onSelectTurn(turnId)}
-            className={`max-w-[95%] rounded-2xl px-4 py-3 text-left text-sm leading-relaxed shadow-sm transition ${
+            className={`max-w-[88%] rounded-2xl px-4 py-2.5 text-left text-sm leading-relaxed shadow-sm transition ${
               m.role === "user"
-                ? `ml-auto bg-brand-600 text-white ${selected ? "ring-2 ring-brand-300" : ""}`
-                : `mr-auto bg-white text-slate-700 ring-1 ring-slate-200 ${selected ? "ring-2 ring-brand-400" : ""} ${clickable ? "cursor-pointer hover:ring-brand-200" : ""}`
+                ? `ml-auto bg-brand-500 text-white ${selected ? "ring-2 ring-brand-300" : ""}`
+                : `mr-auto bg-white text-navy-800 ring-1 ring-navy-200 ${selected ? "ring-2 ring-brand-400" : ""} ${clickable ? "cursor-pointer hover:ring-brand-200" : ""}`
             } ${!clickable ? "cursor-default" : ""}`}
           >
             {m.role === "assistant" ? (

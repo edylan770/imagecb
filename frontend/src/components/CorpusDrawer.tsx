@@ -69,23 +69,23 @@ export function CorpusDrawer({
     <>
       <button
         type="button"
-        className="fixed inset-0 z-40 bg-slate-900/40"
+        className="fixed inset-0 z-40 bg-navy-950/50"
         aria-label="Close drawer"
         onClick={onClose}
       />
       <aside className="fixed right-0 top-0 z-50 flex h-full w-full max-w-lg flex-col bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <h2 className="text-lg font-semibold">Add to corpus</h2>
+        <div className="flex items-center justify-between border-b border-navy-200 bg-navy-50 px-5 py-4">
+          <h2 className="text-lg font-semibold text-navy-900">Add to ATLAS corpus</h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1 text-slate-500 hover:bg-slate-100"
+            className="rounded-lg p-1 text-navy-500 hover:bg-navy-100"
           >
             ✕
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-5">
-          <p className="mb-4 text-sm text-slate-500">
+          <p className="mb-4 text-sm text-navy-500">
             Upload many images, PDFs, or decks at once. Each image is captioned in
             parallel (Bedrock) to generate a name, tags, use case, and suggested
             searches.
@@ -101,13 +101,13 @@ export function CorpusDrawer({
             className={`mb-4 rounded-xl border-2 border-dashed px-4 py-8 text-center transition ${
               dragOver
                 ? "border-brand-400 bg-brand-50"
-                : "border-slate-200 bg-slate-50/50"
+                : "border-navy-200 bg-navy-50/50"
             } ${ingesting ? "opacity-60" : ""}`}
           >
-            <p className="text-sm font-medium text-slate-700">
+            <p className="text-sm font-medium text-navy-700">
               Drag and drop files or folders here
             </p>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-navy-500">
               Images, PDF, PPTX — large batches are uploaded in chunks
             </p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
@@ -115,7 +115,7 @@ export function CorpusDrawer({
                 type="button"
                 disabled={ingesting}
                 onClick={() => fileInputRef.current?.click()}
-                className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-400 disabled:opacity-50"
               >
                 Choose files
               </button>
@@ -123,7 +123,7 @@ export function CorpusDrawer({
                 type="button"
                 disabled={ingesting}
                 onClick={() => folderInputRef.current?.click()}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-lg border border-navy-200 bg-white px-4 py-2 text-sm font-medium text-navy-700 hover:bg-navy-50 disabled:opacity-50"
               >
                 Choose folder
               </button>
@@ -157,12 +157,12 @@ export function CorpusDrawer({
           />
 
           {selectedCount > 0 && !ingesting && (
-            <p className="mb-3 text-xs text-slate-500">
+            <p className="mb-3 text-xs text-navy-500">
               Last selection: {selectedCount} file{selectedCount !== 1 ? "s" : ""}
             </p>
           )}
 
-          <label className="mb-3 flex items-center gap-2 text-xs text-slate-500">
+          <label className="mb-3 flex items-center gap-2 text-xs text-navy-500">
             <span className="shrink-0">Parallel workers</span>
             <input
               type="range"
@@ -173,7 +173,7 @@ export function CorpusDrawer({
               disabled={ingesting}
               className="flex-1 accent-brand-600"
             />
-            <span className="w-6 font-medium text-slate-700">{ingestWorkers}</span>
+            <span className="w-6 font-medium text-navy-700">{ingestWorkers}</span>
           </label>
 
           <div className="space-y-2 text-sm">
@@ -208,15 +208,15 @@ export function CorpusDrawer({
 
           {ingesting && ingestProgress && (
             <div className="mt-4">
-              <div className="mb-1 flex justify-between text-xs text-slate-600">
+              <div className="mb-1 flex justify-between text-xs text-navy-600">
                 <span>{ingestProgress.batchLabel}</span>
                 <span>
                   {ingestProgress.filesDone} / {ingestProgress.filesTotal} files
                 </span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-2 overflow-hidden rounded-full bg-navy-100">
                 <div
-                  className="h-full bg-brand-600 transition-all"
+                  className="h-full bg-brand-500 transition-all"
                   style={{
                     width: `${
                       ingestProgress.filesTotal > 0
@@ -231,44 +231,44 @@ export function CorpusDrawer({
           )}
 
           {ingestMessage && (
-            <pre className="mt-4 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-xs text-slate-700">
+            <pre className="mt-4 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg bg-navy-50 p-3 text-xs text-navy-700">
               {ingestMessage}
             </pre>
           )}
 
-          <div className="mt-8 border-t border-slate-100 pt-6">
-            <h3 className="text-sm font-semibold text-slate-800">Corpus catalog</h3>
-            <p className="mt-1 text-xs text-slate-500">
+          <div className="mt-8 border-t border-navy-100 pt-6">
+            <h3 className="text-sm font-semibold text-navy-800">Corpus catalog</h3>
+            <p className="mt-1 text-xs text-navy-500">
               Recently indexed images with generated metadata.
             </p>
             {catalogLoading && (
-              <p className="mt-3 text-xs text-slate-400">Loading catalog…</p>
+              <p className="mt-3 text-xs text-navy-400">Loading catalog…</p>
             )}
             {!catalogLoading && catalog.length === 0 && (
-              <p className="mt-3 text-xs text-slate-400">No images indexed yet.</p>
+              <p className="mt-3 text-xs text-navy-400">No images indexed yet.</p>
             )}
             <ul className="mt-3 space-y-3">
               {catalog.map((item) => (
                 <li
                   key={item.image_id}
-                  className="rounded-lg border border-slate-100 bg-slate-50/80 p-3"
+                  className="rounded-lg border border-navy-100 bg-navy-50/80 p-3"
                 >
                   <div className="flex gap-3">
                     <img
                       src={item.image_url}
                       alt={item.image_name}
-                      className="h-14 w-14 shrink-0 rounded-md object-cover bg-slate-200"
+                      className="h-14 w-14 shrink-0 rounded-md object-cover bg-navy-200"
                       loading="lazy"
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-slate-800">
+                      <p className="truncate text-sm font-medium text-navy-800">
                         {item.image_name}
                       </p>
-                      <p className="truncate text-[10px] text-slate-400">
+                      <p className="truncate text-[10px] text-navy-400">
                         {item.source_name}
                       </p>
                       {item.use_case && (
-                        <p className="mt-1 line-clamp-2 text-xs text-slate-600">
+                        <p className="mt-1 line-clamp-2 text-xs text-navy-600">
                           {item.use_case}
                         </p>
                       )}
@@ -279,7 +279,7 @@ export function CorpusDrawer({
                       {item.tags.slice(0, 8).map((tag) => (
                         <span
                           key={tag}
-                          className="rounded-md bg-white px-1.5 py-0.5 text-[10px] text-slate-600 ring-1 ring-slate-200"
+                          className="rounded-md bg-white px-1.5 py-0.5 text-[10px] text-navy-600 ring-1 ring-navy-200"
                         >
                           {tag}
                         </span>

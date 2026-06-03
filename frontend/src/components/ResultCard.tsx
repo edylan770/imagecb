@@ -6,8 +6,8 @@ interface ResultCardProps {
 
 export function ResultCard({ card }: ResultCardProps) {
   return (
-    <article className="flex flex-col overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-slate-200 transition hover:shadow-lg">
-      <div className="relative aspect-video bg-slate-100">
+    <article className="flex flex-col overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-navy-200 transition hover:shadow-lg hover:ring-brand-300">
+      <div className="relative aspect-video bg-navy-50">
         {card.has_image_file ? (
           <img
             src={card.image_url}
@@ -16,15 +16,15 @@ export function ResultCard({ card }: ResultCardProps) {
             loading="lazy"
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-xs text-slate-400">
+          <div className="flex h-full items-center justify-center text-xs text-navy-500">
             Image unavailable
           </div>
         )}
-        <span className="absolute left-2 top-2 rounded-md bg-slate-900/75 px-2 py-0.5 text-xs font-medium text-white">
+        <span className="absolute left-2 top-2 rounded-md bg-navy-900/90 px-2 py-0.5 text-xs font-medium text-white">
           #{card.rank}
         </span>
         <span
-          className="absolute right-2 top-2 rounded-md bg-brand-600/90 px-2 py-0.5 text-xs font-semibold text-white"
+          className="absolute right-2 top-2 rounded-md bg-brand-500 px-2 py-0.5 text-xs font-semibold text-white"
           title="Calibrated relevance (display only); ranking uses raw model scores"
         >
           {card.match_percent}%
@@ -32,7 +32,7 @@ export function ResultCard({ card }: ResultCardProps) {
       </div>
       <div className="flex flex-1 flex-col gap-2 p-3">
         {card.image_name && (
-          <p className="text-sm font-semibold leading-tight text-slate-800">
+          <p className="text-sm font-semibold leading-tight text-navy-900">
             {card.image_name}
           </p>
         )}
@@ -40,7 +40,7 @@ export function ResultCard({ card }: ResultCardProps) {
           {card.provenance.chips.map((chip) => (
             <span
               key={chip}
-              className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600"
+              className="rounded-md bg-navy-100 px-2 py-0.5 text-[10px] font-medium text-navy-700"
             >
               {chip}
             </span>
@@ -59,21 +59,21 @@ export function ResultCard({ card }: ResultCardProps) {
           </div>
         )}
         {card.use_case && (
-          <p className="text-[10px] italic text-slate-500">{card.use_case}</p>
+          <p className="text-[10px] italic text-navy-600">{card.use_case}</p>
         )}
         {card.caption && (
-          <p className="line-clamp-3 text-xs leading-snug text-slate-700">
+          <p className="line-clamp-3 text-xs leading-snug text-navy-800">
             {card.caption}
           </p>
         )}
         {card.recommended_cases && card.recommended_cases.length > 0 && (
-          <p className="text-[10px] text-slate-400" title={card.recommended_cases.join("\n")}>
+          <p className="text-[10px] text-navy-500" title={card.recommended_cases.join("\n")}>
             Try: {card.recommended_cases[0]}
           </p>
         )}
         {card.match_hint && (
           <p
-            className="mt-auto text-[10px] text-slate-400"
+            className="mt-auto text-[10px] text-navy-500"
             title={card.match_hint}
           >
             {card.match_hint}
