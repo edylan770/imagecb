@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  fetchCorpusCatalog,
   fetchStatus,
   fetchSuggestions,
-  ingestFiles,
+  ingestFilesBatched,
   sendChatStream,
 } from "./api/client";
 import {
@@ -26,6 +27,7 @@ import { EmptyState } from "./components/EmptyState";
 import { Header } from "./components/Header";
 import { ResultsGrid } from "./components/ResultsGrid";
 import type {
+  CatalogItem,
   Conversation,
   ConversationTurn,
   ResultCard,
@@ -58,8 +60,16 @@ export default function App() {
   const [skipCaption, setSkipCaption] = useState(false);
   const [skipOcr, setSkipOcr] = useState(false);
   const [force, setForce] = useState(false);
+  const [ingestWorkers, setIngestWorkers] = useState(4);
   const [ingesting, setIngesting] = useState(false);
   const [ingestMessage, setIngestMessage] = useState<string | null>(null);
+  const [ingestProgress, setIngestProgress] = useState<{
+    filesDone: number;
+    filesTotal: number;
+    batchLabel: string;
+  } | null>(null);
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [searchHistory, setSearchHistory] = useState<SearchHistoryEntry[]>([]);
@@ -137,6 +147,24 @@ export default function App() {
   useEffect(() => {
     refreshStatus();
   }, [refreshStatus]);
+
+  const refreshCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    try {
+      const res = await fetchCorpusCatalog(40);
+      setCatalog(res.items);
+    } catch {
+      setCatalog([]);
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (corpusOpen) {
+      void refreshCatalog();
+    }
+  }, [corpusOpen, refreshCatalog, indexedCount]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -408,22 +436,39 @@ export default function App() {
     void runSearch(entry.query, effectiveTopK, effectiveMinMatchPercent);
   };
 
-  const handleIngest = async (files: FileList | null) => {
-    if (!files?.length) return;
+  const handleIngest = async (files: File[]) => {
+    if (!files.length) return;
     setIngesting(true);
     setIngestMessage(null);
+    setIngestProgress({ filesDone: 0, filesTotal: files.length, batchLabel: "Starting…" });
     try {
-      const res = await ingestFiles(Array.from(files), {
-        skipCaption,
-        skipOcr,
-        force,
-      });
+      const res = await ingestFilesBatched(
+        files,
+        {
+          skipCaption,
+          skipOcr,
+          force,
+          workers: ingestWorkers,
+        },
+        {
+          batchSize: 25,
+          onProgress: (p) => {
+            setIngestProgress({
+              filesDone: p.filesDone,
+              filesTotal: p.filesTotal,
+              batchLabel: `Batch ${p.batchIndex} of ${p.batchCount}`,
+            });
+          },
+        },
+      );
       setIngestMessage(res.message);
       setIndexedCount(res.indexed_count);
+      void refreshCatalog();
     } catch (e) {
       setIngestMessage(e instanceof Error ? e.message : String(e));
     } finally {
       setIngesting(false);
+      setIngestProgress(null);
     }
   };
 
@@ -527,12 +572,17 @@ export default function App() {
         skipCaption={skipCaption}
         skipOcr={skipOcr}
         force={force}
+        ingestWorkers={ingestWorkers}
         onSkipCaptionChange={setSkipCaption}
         onSkipOcrChange={setSkipOcr}
         onForceChange={setForce}
+        onIngestWorkersChange={setIngestWorkers}
         onIngest={handleIngest}
         ingestMessage={ingestMessage}
         ingesting={ingesting}
+        ingestProgress={ingestProgress}
+        catalog={catalog}
+        catalogLoading={catalogLoading}
       />
     </div>
   );

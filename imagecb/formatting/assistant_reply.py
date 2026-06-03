@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Sequence
@@ -12,7 +12,7 @@ from imagecb.formatting.match_display import display_match_percent
 from imagecb.paths import resolve_image_file, resolve_source_file
 from imagecb.retrieval.query_parser import QuerySpec
 from imagecb.retrieval.rerank import RankedResult
-from imagecb.storage.metadata_db import ImageRecord
+from imagecb.storage.metadata_db import ImageRecord, deserialize_list
 
 _CAPTION_FAILED = "[caption failed]"
 _CAPTION_TRUNC = 120
@@ -60,6 +60,10 @@ class ResultCard:
     match_hint: Optional[str]
     match_percent: int
     has_image_file: bool
+    image_name: str = ""
+    use_case: str = ""
+    tags: List[str] = field(default_factory=list)
+    recommended_cases: List[str] = field(default_factory=list)
     source_url: Optional[str] = None
     source_location: str = ""
     source_path: Optional[str] = None
@@ -69,6 +73,14 @@ class ResultCard:
 class AssistantReply:
     message: str
     results: List[ResultCard]
+
+
+def catalog_fields_from_record(record: ImageRecord) -> tuple[str, str, List[str], List[str]]:
+    name = (record.image_name or "").strip() or Path(record.source_file or "").name or "(unknown)"
+    use_case = (record.use_case or "").strip()
+    tags = deserialize_list(record.tags_json)
+    recommended = deserialize_list(record.recommended_cases_json)
+    return name, use_case, tags, recommended
 
 
 def provenance_from_record(record: ImageRecord) -> Provenance:
@@ -130,6 +142,7 @@ def build_result_cards(
         prov = provenance_from_record(r.record)
         cap = _display_caption(r.record)
         src_path = resolve_source_file(r.record)
+        image_name, use_case, tags, recommended = catalog_fields_from_record(r.record)
         cards.append(
             ResultCard(
                 rank=rank,
@@ -140,6 +153,10 @@ def build_result_cards(
                 match_hint=_short_match_hint(r),
                 match_percent=display_match_percent(r.score, r.score_kind),
                 has_image_file=resolve_image_file(r.record) is not None,
+                image_name=image_name,
+                use_case=use_case,
+                tags=tags,
+                recommended_cases=recommended,
                 source_url=f"{source_url_prefix}/{r.image_id}" if src_path else None,
                 source_location=source_location_label(r.record),
                 source_path=str(src_path) if src_path else None,

@@ -14,8 +14,10 @@ from PIL import Image
 from imagecb.api.interpretation import build_interpretation_notes
 from imagecb.api.query_format import format_query_error, spec_to_parsed_query
 from imagecb.api.schemas import (
+    CatalogItemOut,
     ChatRequest,
     ChatResponse,
+    CorpusCatalogResponse,
     HealthResponse,
     IngestResponse,
     ProvenanceOut,
@@ -29,7 +31,13 @@ from imagecb.api.schemas import (
     SuggestionsResponse,
 )
 from imagecb.api.sessions import get_or_create_session, get_session, reset_session
-from imagecb.formatting.assistant_reply import build_result_cards
+from imagecb.config import SETTINGS
+from imagecb.formatting.assistant_reply import (
+    _display_caption,
+    build_result_cards,
+    catalog_fields_from_record,
+    provenance_from_record,
+)
 from imagecb.formatting.conversational_reply import (
     build_conversational_reply,
     iter_conversational_reply_text,
@@ -79,6 +87,10 @@ def _result_card_out(card) -> ResultCardOut:
         match_hint=card.match_hint,
         match_percent=card.match_percent,
         has_image_file=card.has_image_file,
+        image_name=card.image_name,
+        use_case=card.use_case,
+        tags=card.tags,
+        recommended_cases=card.recommended_cases,
         source_url=card.source_url,
         source_location=card.source_location,
         source_path=card.source_path,
@@ -365,12 +377,41 @@ def get_source(image_id: str) -> FileResponse:
     return FileResponse(path, media_type=media, filename=path.name)
 
 
+@router.get("/corpus/catalog", response_model=CorpusCatalogResponse)
+def corpus_catalog(limit: int = 40) -> CorpusCatalogResponse:
+    """Recently ingested images with catalog metadata (name, tags, use cases)."""
+    limit = max(1, min(limit, 200))
+    records = metadata_db.get_recent_records(limit)
+    items: List[CatalogItemOut] = []
+    for r in records:
+        image_name, use_case, tags, recommended = catalog_fields_from_record(r)
+        prov = provenance_from_record(r)
+        items.append(
+            CatalogItemOut(
+                image_id=r.image_id,
+                image_url=f"/api/images/{r.image_id}",
+                image_name=image_name,
+                use_case=use_case,
+                tags=tags,
+                recommended_cases=recommended,
+                caption=_display_caption(r),
+                source_name=prov.source_name,
+            )
+        )
+    try:
+        n = vector_store.count()
+    except Exception:  # noqa: BLE001
+        n = len(records)
+    return CorpusCatalogResponse(items=items, indexed_count=n)
+
+
 @router.post("/ingest", response_model=IngestResponse)
 async def ingest(
     files: List[UploadFile] = File(...),
     skip_caption: bool = Form(False),
     skip_ocr: bool = Form(False),
     force: bool = Form(False),
+    workers: Optional[int] = Form(None),
 ) -> IngestResponse:
     if not files:
         raise HTTPException(status_code=400, detail="at least one file is required")
@@ -387,11 +428,14 @@ async def ingest(
         return IngestResponse(message=msg, indexed_count=n, stats={})
 
     try:
+        ingest_workers = workers if workers is not None else SETTINGS.ingest_workers
+        ingest_workers = max(1, min(int(ingest_workers), 32))
         stats = ingest_paths(
             saved,
             skip_caption=skip_caption,
             skip_ocr=skip_ocr,
             force=force,
+            workers=ingest_workers,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Ingest failed")

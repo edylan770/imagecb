@@ -119,8 +119,10 @@ def rebuild_from_records(records) -> None:
     for r in records:
         parts: List[str] = []
         for v in (
+            r.image_name,
             r.caption_short,
             r.caption_detailed,
+            r.use_case,
             r.scene,
             r.text_overlay_summary,
             r.slide_title,
@@ -134,6 +136,7 @@ def rebuild_from_records(records) -> None:
 
         parts.extend(deserialize_list(r.tags_json))
         parts.extend(deserialize_list(r.objects_json))
+        parts.extend(deserialize_list(r.recommended_cases_json))
         ids.append(r.image_id)
         texts.append(" \n ".join(parts))
 

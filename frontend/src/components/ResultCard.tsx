@@ -31,6 +31,11 @@ export function ResultCard({ card }: ResultCardProps) {
         </span>
       </div>
       <div className="flex flex-1 flex-col gap-2 p-3">
+        {card.image_name && (
+          <p className="text-sm font-semibold leading-tight text-slate-800">
+            {card.image_name}
+          </p>
+        )}
         <div className="flex flex-wrap gap-1">
           {card.provenance.chips.map((chip) => (
             <span
@@ -41,9 +46,29 @@ export function ResultCard({ card }: ResultCardProps) {
             </span>
           ))}
         </div>
+        {card.tags && card.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {card.tags.slice(0, 6).map((tag) => (
+              <span
+                key={tag}
+                className="rounded-md bg-brand-50 px-1.5 py-0.5 text-[10px] text-brand-800"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+        {card.use_case && (
+          <p className="text-[10px] italic text-slate-500">{card.use_case}</p>
+        )}
         {card.caption && (
           <p className="line-clamp-3 text-xs leading-snug text-slate-700">
             {card.caption}
+          </p>
+        )}
+        {card.recommended_cases && card.recommended_cases.length > 0 && (
+          <p className="text-[10px] text-slate-400" title={card.recommended_cases.join("\n")}>
+            Try: {card.recommended_cases[0]}
           </p>
         )}
         {card.match_hint && (

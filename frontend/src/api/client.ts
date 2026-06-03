@@ -2,11 +2,25 @@ import type {
   ChatResponse,
   ChatStreamCallbacks,
   ChatStreamMetadata,
+  CorpusCatalogResponse,
   IngestResponse,
   ParsedQuery,
   StatusResponse,
   SuggestionsResponse,
 } from "../types";
+
+const SUPPORTED_EXT = new Set([
+  ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".pdf", ".pptx",
+]);
+
+export function filterSupportedFiles(files: File[]): File[] {
+  return files.filter((f) => {
+    const name = f.name.toLowerCase();
+    const dot = name.lastIndexOf(".");
+    const ext = dot >= 0 ? name.slice(dot) : "";
+    return SUPPORTED_EXT.has(ext);
+  });
+}
 
 const API_BASE = "";
 
@@ -178,9 +192,16 @@ export async function resetSession(sessionId: string): Promise<void> {
   });
 }
 
+export interface IngestFlags {
+  skipCaption: boolean;
+  skipOcr: boolean;
+  force: boolean;
+  workers?: number;
+}
+
 export async function ingestFiles(
   files: File[],
-  flags: { skipCaption: boolean; skipOcr: boolean; force: boolean },
+  flags: IngestFlags,
 ): Promise<IngestResponse> {
   const form = new FormData();
   for (const f of files) {
@@ -189,8 +210,74 @@ export async function ingestFiles(
   form.append("skip_caption", String(flags.skipCaption));
   form.append("skip_ocr", String(flags.skipOcr));
   form.append("force", String(flags.force));
+  if (flags.workers != null) {
+    form.append("workers", String(flags.workers));
+  }
   return request<IngestResponse>("/api/ingest", {
     method: "POST",
     body: form,
   });
+}
+
+export interface BatchedIngestProgress {
+  batchIndex: number;
+  batchCount: number;
+  filesDone: number;
+  filesTotal: number;
+  lastMessage?: string;
+}
+
+export async function ingestFilesBatched(
+  files: File[],
+  flags: IngestFlags,
+  options: {
+    batchSize?: number;
+    onProgress?: (p: BatchedIngestProgress) => void;
+  } = {},
+): Promise<IngestResponse> {
+  const batchSize = Math.max(1, options.batchSize ?? 25);
+  const supported = filterSupportedFiles(files);
+  if (supported.length === 0) {
+    throw new Error("No supported files selected.");
+  }
+  const batches: File[][] = [];
+  for (let i = 0; i < supported.length; i += batchSize) {
+    batches.push(supported.slice(i, i + batchSize));
+  }
+  let last: IngestResponse = {
+    message: "",
+    indexed_count: 0,
+    stats: {},
+  };
+  const messages: string[] = [];
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i]!;
+    options.onProgress?.({
+      batchIndex: i + 1,
+      batchCount: batches.length,
+      filesDone: Math.min((i + 1) * batchSize, supported.length),
+      filesTotal: supported.length,
+    });
+    last = await ingestFiles(batch, flags);
+    messages.push(`Batch ${i + 1}/${batches.length}: ${last.message}`);
+    options.onProgress?.({
+      batchIndex: i + 1,
+      batchCount: batches.length,
+      filesDone: Math.min((i + 1) * batchSize, supported.length),
+      filesTotal: supported.length,
+      lastMessage: last.message,
+    });
+  }
+  return {
+    ...last,
+    message: messages.join("\n\n"),
+  };
+}
+
+export async function fetchCorpusCatalog(
+  limit = 40,
+): Promise<CorpusCatalogResponse> {
+  return request<CorpusCatalogResponse>(
+    `/api/corpus/catalog?limit=${encodeURIComponent(String(limit))}`,
+  );
 }

@@ -22,6 +22,7 @@ from sqlalchemy import (
     Text,
     create_engine,
     select,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -58,6 +59,10 @@ class ImageRecord(Base):
     scene = Column(Text, nullable=True)
     text_overlay_summary = Column(Text, nullable=True)
 
+    image_name = Column(Text, nullable=True)
+    use_case = Column(Text, nullable=True)
+    recommended_cases_json = Column(Text, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -69,11 +74,30 @@ def _engine_url() -> str:
     return f"sqlite:///{SETTINGS.sqlite_path}"
 
 
+def _migrate_schema(engine) -> None:
+    """Add catalog columns to existing SQLite databases."""
+    with engine.connect() as conn:
+        rows = conn.execute(text("PRAGMA table_info(images)")).fetchall()
+        cols = {row[1] for row in rows}
+        for col, ddl in (
+            ("image_name", "ALTER TABLE images ADD COLUMN image_name TEXT"),
+            ("use_case", "ALTER TABLE images ADD COLUMN use_case TEXT"),
+            (
+                "recommended_cases_json",
+                "ALTER TABLE images ADD COLUMN recommended_cases_json TEXT",
+            ),
+        ):
+            if col not in cols:
+                conn.execute(text(ddl))
+        conn.commit()
+
+
 def get_engine():
     global _engine, _SessionLocal
     if _engine is None:
         _engine = create_engine(_engine_url(), future=True)
         Base.metadata.create_all(_engine)
+        _migrate_schema(_engine)
         _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False, future=True)
     return _engine
 
@@ -139,6 +163,24 @@ def get_records(image_ids: Sequence[str]) -> List[ImageRecord]:
 def get_all_records() -> List[ImageRecord]:
     with session_scope() as s:
         rows = s.execute(select(ImageRecord)).scalars().all()
+        for r in rows:
+            s.expunge(r)
+        return list(rows)
+
+
+def get_recent_records(limit: int = 50) -> List[ImageRecord]:
+    """Most recently ingested images (for corpus catalog UI)."""
+    limit = max(1, min(limit, 200))
+    with session_scope() as s:
+        rows = (
+            s.execute(
+                select(ImageRecord)
+                .order_by(ImageRecord.created_at.desc())
+                .limit(limit)
+            )
+            .scalars()
+            .all()
+        )
         for r in rows:
             s.expunge(r)
         return list(rows)
