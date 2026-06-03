@@ -1,14 +1,19 @@
 import type { KeyboardEvent } from "react";
+import type { SearchHistoryEntry } from "../types";
+import { SearchHistoryChips } from "./SearchHistoryChips";
 
 interface ComposerProps {
   value: string;
   topK: number;
   minMatchPercent: number;
   loading: boolean;
+  searchHistory: SearchHistoryEntry[];
   onChange: (value: string) => void;
   onTopKChange: (value: number) => void;
   onMinMatchPercentChange: (value: number) => void;
   onSend: () => void;
+  onRerunSearch: (entry: SearchHistoryEntry) => void;
+  onClearSearchHistory: () => void;
 }
 
 export function Composer({
@@ -16,10 +21,13 @@ export function Composer({
   topK,
   minMatchPercent,
   loading,
+  searchHistory,
   onChange,
   onTopKChange,
   onMinMatchPercentChange,
   onSend,
+  onRerunSearch,
+  onClearSearchHistory,
 }: ComposerProps) {
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -75,6 +83,13 @@ export function Composer({
           <span className="w-8 font-medium text-slate-700">{minMatchPercent}</span>
         </label>
       </div>
+      <SearchHistoryChips
+        history={searchHistory}
+        onSelect={onRerunSearch}
+        onClear={onClearSearchHistory}
+        maxItems={6}
+        className="mt-3 border-t border-slate-100 pt-3"
+      />
     </div>
   );
 }

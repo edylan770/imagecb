@@ -91,3 +91,10 @@ export interface IngestResponse {
   indexed_count: number;
   stats: Record<string, number>;
 }
+
+export interface SearchHistoryEntry {
+  query: string;
+  timestamp: number;
+  topK?: number;
+  minMatchPercent?: number;
+}
