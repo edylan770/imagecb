@@ -26,9 +26,29 @@ class ResultCardOut(BaseModel):
     match_hint: Optional[str] = None
     match_percent: int = 0
     has_image_file: bool = True
+    image_name: str = ""
+    use_case: str = ""
+    tags: List[str] = Field(default_factory=list)
+    recommended_cases: List[str] = Field(default_factory=list)
     source_url: Optional[str] = None
     source_location: str = ""
     source_path: Optional[str] = None
+
+
+class CatalogItemOut(BaseModel):
+    image_id: str
+    image_url: str
+    image_name: str
+    use_case: str = ""
+    tags: List[str] = Field(default_factory=list)
+    recommended_cases: List[str] = Field(default_factory=list)
+    caption: str = ""
+    source_name: str = ""
+
+
+class CorpusCatalogResponse(BaseModel):
+    items: List[CatalogItemOut] = Field(default_factory=list)
+    indexed_count: int = 0
 
 
 class SourceFiltersOut(BaseModel):

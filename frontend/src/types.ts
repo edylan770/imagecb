@@ -17,6 +17,26 @@ export interface ResultCard {
   match_hint?: string | null;
   match_percent: number;
   has_image_file: boolean;
+  image_name?: string;
+  use_case?: string;
+  tags?: string[];
+  recommended_cases?: string[];
+}
+
+export interface CatalogItem {
+  image_id: string;
+  image_url: string;
+  image_name: string;
+  use_case: string;
+  tags: string[];
+  recommended_cases: string[];
+  caption: string;
+  source_name: string;
+}
+
+export interface CorpusCatalogResponse {
+  items: CatalogItem[];
+  indexed_count: number;
   source_url?: string | null;
   source_location?: string;
   source_path?: string | null;

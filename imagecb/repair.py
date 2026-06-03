@@ -54,12 +54,16 @@ def _repair_one_caption(record: ImageRecord) -> Tuple[str, bool, Optional[str]]:
         return record.image_id, False, "cached image missing"
     try:
         caption = get_captioner().caption_image(img)
+        if caption.image_name:
+            record.image_name = caption.image_name
         record.caption_short = caption.short_caption
         record.caption_detailed = caption.detailed_description
+        record.use_case = caption.use_case
         record.scene = caption.scene
         record.text_overlay_summary = caption.text_overlay_summary
         record.objects_json = serialize_list(caption.objects)
         record.tags_json = serialize_list(caption.tags)
+        record.recommended_cases_json = serialize_list(caption.recommended_cases)
         with session_scope() as s:
             s.merge(record)
         return record.image_id, True, None

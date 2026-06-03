@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  fetchCorpusCatalog,
   fetchStatus,
   fetchSuggestions,
-  ingestFiles,
+  ingestFilesBatched,
   sendChatStream,
 } from "./api/client";
 import {
@@ -26,6 +27,7 @@ import { EmptyState } from "./components/EmptyState";
 import { Header } from "./components/Header";
 import { ResultsGrid } from "./components/ResultsGrid";
 import type {
+  CatalogItem,
   Conversation,
   ConversationTurn,
   ResultCard,
@@ -52,14 +54,22 @@ export default function App() {
   const [minMatchPercent, setMinMatchPercent] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   const [corpusOpen, setCorpusOpen] = useState(false);
   const [skipCaption, setSkipCaption] = useState(false);
   const [skipOcr, setSkipOcr] = useState(false);
   const [force, setForce] = useState(false);
+  const [ingestWorkers, setIngestWorkers] = useState(4);
   const [ingesting, setIngesting] = useState(false);
   const [ingestMessage, setIngestMessage] = useState<string | null>(null);
+  const [ingestProgress, setIngestProgress] = useState<{
+    filesDone: number;
+    filesTotal: number;
+    batchLabel: string;
+  } | null>(null);
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [searchHistory, setSearchHistory] = useState<SearchHistoryEntry[]>([]);
@@ -139,6 +149,24 @@ export default function App() {
     refreshStatus();
   }, [refreshStatus]);
 
+  const refreshCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    try {
+      const res = await fetchCorpusCatalog(40);
+      setCatalog(res.items);
+    } catch {
+      setCatalog([]);
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (corpusOpen) {
+      void refreshCatalog();
+    }
+  }, [corpusOpen, refreshCatalog, indexedCount]);
+
   useEffect(() => {
     if (messages.length > 0) {
       setSuggestions([]);
@@ -169,11 +197,15 @@ export default function App() {
   }, [messages.length, indexedCount, conversations]);
 
   const selectConversation = useCallback(
-    (id: string) => {
+    (id: string, turnId?: string | null) => {
       setActiveConversationId(id);
       persistSoon(conversations, id);
       const c = conversations.find((x) => x.id === id);
-      const turn = c ? lastTurn(c.turns) : null;
+      let turn = c ? lastTurn(c.turns) : null;
+      if (c && turnId) {
+        const matched = c.turns.find((t) => t.id === turnId);
+        if (matched) turn = matched;
+      }
       setSelectedTurnId(turn?.id ?? null);
       applyTurnToPanel(turn, setResults);
       setError(null);
@@ -412,104 +444,131 @@ export default function App() {
     void runSearch(entry.query, effectiveTopK, effectiveMinMatchPercent);
   };
 
-  const handleIngest = async (files: FileList | null) => {
-    if (!files?.length) return;
+  const handleIngest = async (files: File[]) => {
+    if (!files.length) return;
     setIngesting(true);
     setIngestMessage(null);
+    setIngestProgress({ filesDone: 0, filesTotal: files.length, batchLabel: "Starting…" });
     try {
-      const res = await ingestFiles(Array.from(files), {
-        skipCaption,
-        skipOcr,
-        force,
-      });
+      const res = await ingestFilesBatched(
+        files,
+        {
+          skipCaption,
+          skipOcr,
+          force,
+          workers: ingestWorkers,
+        },
+        {
+          batchSize: 25,
+          onProgress: (p) => {
+            setIngestProgress({
+              filesDone: p.filesDone,
+              filesTotal: p.filesTotal,
+              batchLabel: `Batch ${p.batchIndex} of ${p.batchCount}`,
+            });
+          },
+        },
+      );
       setIngestMessage(res.message);
       setIndexedCount(res.indexed_count);
+      void refreshCatalog();
     } catch (e) {
       setIngestMessage(e instanceof Error ? e.message : String(e));
     } finally {
       setIngesting(false);
+      setIngestProgress(null);
     }
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <Header
-        indexedCount={indexedCount}
-        onOpenCorpus={() => setCorpusOpen(true)}
-      />
+    <div className="flex h-dvh min-h-screen flex-col overflow-hidden">
+      <div className="shrink-0">
+        <Header
+          indexedCount={indexedCount}
+          onOpenCorpus={() => setCorpusOpen(true)}
+        />
+      </div>
 
       {error && (
-        <div className="mx-6 mt-2 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700 ring-1 ring-red-100">
-          {error}
+        <div className="shrink-0 px-6 py-2">
+          <div className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700 ring-1 ring-red-100">
+            {error}
+          </div>
         </div>
       )}
 
-      <main className="flex flex-1 flex-col lg:flex-row lg:items-stretch">
-        <ChatSidebar
-          conversations={conversations}
-          activeId={activeConversationId}
-          collapsed={sidebarCollapsed}
-          onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
-          onSelect={selectConversation}
-          onNewChat={handleNewChat}
-          onDelete={handleDeleteChat}
-        />
+      <main className="flex min-h-0 flex-1 flex-row">
+        {/* Left — search & chats (slightly narrower than results) */}
+        <div className="flex min-h-0 min-w-0 flex-[5] flex-col border-r border-navy-200">
+          <div className="flex min-h-0 flex-1">
+            <ChatSidebar
+              conversations={conversations}
+              activeId={activeConversationId}
+              collapsed={sidebarCollapsed}
+              onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
+              onSelect={selectConversation}
+              onNewChat={handleNewChat}
+              onDelete={handleDeleteChat}
+            />
 
-        <section className="flex min-h-0 flex-1 flex-col border-b border-slate-200 lg:border-b-0 lg:border-r">
-          <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Conversation
-            </span>
-            {sidebarCollapsed && (
-              <button
-                type="button"
-                onClick={() => setSidebarCollapsed(false)}
-                className="text-xs text-brand-600 hover:underline"
-              >
-                Show chats
-              </button>
-            )}
-          </div>
-          <div className="max-h-[min(50vh,calc(100dvh-14rem))] flex-1 overflow-y-auto lg:max-h-none">
-            {messages.length === 0 ? (
-              <EmptyState
-                suggestions={suggestions}
-                loading={suggestionsLoading}
+            <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+              <div className="flex shrink-0 items-center gap-2 border-b border-navy-100 bg-navy-50 px-4 py-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-navy-700">
+                  Search
+                </span>
+                {sidebarCollapsed && (
+                  <button
+                    type="button"
+                    onClick={() => setSidebarCollapsed(false)}
+                    className="text-xs font-medium text-brand-600 hover:text-brand-500 hover:underline"
+                  >
+                    Show chats
+                  </button>
+                )}
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {messages.length === 0 ? (
+                  <EmptyState
+                    suggestions={suggestions}
+                    loading={suggestionsLoading}
+                    searchHistory={searchHistory}
+                    onPickExample={setInput}
+                    onRerunSearch={handleRerunSearch}
+                    onClearSearchHistory={handleClearSearchHistory}
+                  />
+                ) : (
+                  <ChatMessageList
+                    messages={messages}
+                    selectedTurnId={selectedTurnId}
+                    onSelectTurn={handleSelectTurn}
+                  />
+                )}
+              </div>
+              <Composer
+                value={input}
+                topK={topK}
+                minMatchPercent={minMatchPercent}
+                loading={loading}
                 searchHistory={searchHistory}
-                onPickExample={setInput}
+                onChange={setInput}
+                onTopKChange={setTopK}
+                onMinMatchPercentChange={setMinMatchPercent}
+                onSend={handleSend}
                 onRerunSearch={handleRerunSearch}
                 onClearSearchHistory={handleClearSearchHistory}
               />
-            ) : (
-              <ChatMessageList
-                messages={messages}
-                selectedTurnId={selectedTurnId}
-                onSelectTurn={handleSelectTurn}
-              />
-            )}
+            </section>
           </div>
-          <Composer
-            value={input}
-            topK={topK}
-            minMatchPercent={minMatchPercent}
-            loading={loading}
-            searchHistory={searchHistory}
-            onChange={setInput}
-            onTopKChange={setTopK}
-            onMinMatchPercentChange={setMinMatchPercent}
-            onSend={handleSend}
-            onRerunSearch={handleRerunSearch}
-            onClearSearchHistory={handleClearSearchHistory}
-          />
-        </section>
+        </div>
 
-        <section className="flex min-h-[50vh] flex-1 flex-col lg:sticky lg:top-0 lg:min-h-0 lg:h-[calc(100dvh-7rem)]">
-          <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {/* Right — results (more width for image grid) */}
+        <section className="flex min-h-0 min-w-0 flex-[6] flex-col bg-white">
+          <div className="flex shrink-0 items-center gap-2 border-b border-navy-100 bg-navy-50 px-4 py-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-navy-700">
               Results
             </span>
             {results.length > 0 && (
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-navy-500">
                 {results.length} image{results.length !== 1 ? "s" : ""}
               </span>
             )}
@@ -528,11 +587,10 @@ export default function App() {
         </section>
       </main>
 
-      <footer className="border-t border-slate-200 bg-white px-6 py-2 text-xs text-slate-500">
-        Indexed images: {indexedCount}. CLI:{" "}
-        <code className="rounded bg-slate-100 px-1">
-          python -m imagecb.cli ingest &lt;path&gt;
-        </code>
+      <footer className="shrink-0 border-t border-navy-800 bg-navy-950 px-5 py-1 text-[11px] text-white/50">
+        <span className="font-semibold text-white/80">ATLAS</span>
+        {" · "}
+        {indexedCount} indexed images
       </footer>
 
       <CorpusDrawer
@@ -541,12 +599,17 @@ export default function App() {
         skipCaption={skipCaption}
         skipOcr={skipOcr}
         force={force}
+        ingestWorkers={ingestWorkers}
         onSkipCaptionChange={setSkipCaption}
         onSkipOcrChange={setSkipOcr}
         onForceChange={setForce}
+        onIngestWorkersChange={setIngestWorkers}
         onIngest={handleIngest}
         ingestMessage={ingestMessage}
         ingesting={ingesting}
+        ingestProgress={ingestProgress}
+        catalog={catalog}
+        catalogLoading={catalogLoading}
       />
     </div>
   );
