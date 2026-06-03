@@ -1,3 +1,5 @@
+import { getAdminApiKey } from "./adminClient";
+import { getUserId } from "./telemetry";
 import type {
   ChatResponse,
   ChatStreamCallbacks,
@@ -24,11 +26,20 @@ export function filterSupportedFiles(files: File[]): File[] {
 
 const API_BASE = "";
 
+function withUserHeaders(init?: RequestInit): RequestInit {
+  const headers: Record<string, string> = {
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+  const uid = getUserId();
+  if (uid) headers["X-User-Id"] = uid;
+  return { ...init, headers };
+}
+
 async function request<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, init);
+  const res = await fetch(`${API_BASE}${path}`, withUserHeaders(init));
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -79,7 +90,13 @@ export async function sendChat(
 }
 
 type StreamEvent =
-  | { type: "metadata"; session_id: string; results: ChatStreamMetadata["results"]; parsed_query?: ParsedQuery | null }
+  | {
+      type: "metadata";
+      session_id: string;
+      search_event_id?: string | null;
+      results: ChatStreamMetadata["results"];
+      parsed_query?: ParsedQuery | null;
+    }
   | { type: "token"; text: string }
   | { type: "done"; assistant_message: string }
   | { type: "error"; detail: string };
@@ -111,7 +128,7 @@ export async function sendChatStream(
   minMatchPercent: number,
   callbacks: ChatStreamCallbacks,
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/chat/stream`, {
+  const res = await fetch(`${API_BASE}/api/chat/stream`, withUserHeaders({
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -120,7 +137,7 @@ export async function sendChatStream(
       top_k: topK,
       min_match_percent: minMatchPercent,
     }),
-  });
+  }));
 
   if (!res.ok) {
     let detail = res.statusText;
@@ -152,6 +169,7 @@ export async function sendChatStream(
       case "metadata":
         callbacks.onMetadata({
           session_id: event.session_id,
+          search_event_id: event.search_event_id ?? null,
           results: event.results,
           parsed_query: event.parsed_query ?? null,
         });
@@ -213,8 +231,13 @@ export async function ingestFiles(
   if (flags.workers != null) {
     form.append("workers", String(flags.workers));
   }
+  const key = getAdminApiKey();
+  if (!key) {
+    throw new Error("Admin API key required for ingest (set in Admin settings)");
+  }
   return request<IngestResponse>("/api/ingest", {
     method: "POST",
+    headers: { "X-Admin-Api-Key": key },
     body: form,
   });
 }
@@ -280,4 +303,22 @@ export async function fetchCorpusCatalog(
   return request<CorpusCatalogResponse>(
     `/api/corpus/catalog?limit=${encodeURIComponent(String(limit))}`,
   );
+}
+
+export async function sendSimilar(
+  imageId: string,
+  sessionId: string | null,
+  topK: number,
+  minMatchPercent: number,
+): Promise<ChatResponse & { search_event_id?: string | null }> {
+  return request("/api/similar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      image_id: imageId,
+      session_id: sessionId,
+      top_k: topK,
+      min_match_percent: minMatchPercent,
+    }),
+  });
 }

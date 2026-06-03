@@ -65,6 +65,9 @@ class ImageRecord(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    deleted_at = Column(DateTime, nullable=True, index=True)
+    deleted_by = Column(String, nullable=True)
+
 
 _engine = None
 _SessionLocal: Optional[sessionmaker] = None
@@ -98,8 +101,15 @@ def get_engine():
         _engine = create_engine(_engine_url(), future=True)
         Base.metadata.create_all(_engine)
         _migrate_schema(_engine)
+        from imagecb.telemetry.schema import ensure_telemetry_schema
+
+        ensure_telemetry_schema()
         _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False, future=True)
     return _engine
+
+
+def is_active(record: ImageRecord) -> bool:
+    return record.deleted_at is None
 
 
 @contextmanager
@@ -142,27 +152,58 @@ def upsert_image(record: ImageRecord) -> None:
         s.merge(record)
 
 
-def get_record(image_id: str) -> Optional[ImageRecord]:
+def get_record(image_id: str, *, include_deleted: bool = False) -> Optional[ImageRecord]:
     rows = get_records([image_id])
-    return rows[0] if rows else None
+    if not rows:
+        return None
+    rec = rows[0]
+    if not include_deleted and rec.deleted_at is not None:
+        return None
+    return rec
 
 
-def get_records(image_ids: Sequence[str]) -> List[ImageRecord]:
+def get_records(
+    image_ids: Sequence[str],
+    *,
+    include_deleted: bool = False,
+) -> List[ImageRecord]:
     if not image_ids:
         return []
     with session_scope() as s:
-        rows = s.execute(
-            select(ImageRecord).where(ImageRecord.image_id.in_(list(image_ids)))
-        ).scalars().all()
+        stmt = select(ImageRecord).where(ImageRecord.image_id.in_(list(image_ids)))
+        if not include_deleted:
+            stmt = stmt.where(ImageRecord.deleted_at.is_(None))
+        rows = s.execute(stmt).scalars().all()
         # Detach so callers can access attributes after the session closes.
         for r in rows:
             s.expunge(r)
         return list(rows)
 
 
-def get_all_records() -> List[ImageRecord]:
+def get_all_records(*, include_deleted: bool = False) -> List[ImageRecord]:
     with session_scope() as s:
-        rows = s.execute(select(ImageRecord)).scalars().all()
+        stmt = select(ImageRecord)
+        if not include_deleted:
+            stmt = stmt.where(ImageRecord.deleted_at.is_(None))
+        rows = s.execute(stmt).scalars().all()
+        for r in rows:
+            s.expunge(r)
+        return list(rows)
+
+
+def get_active_image_ids() -> List[str]:
+    with session_scope() as s:
+        rows = s.execute(
+            select(ImageRecord.image_id).where(ImageRecord.deleted_at.is_(None))
+        ).all()
+        return [r[0] for r in rows]
+
+
+def get_deleted_records() -> List[ImageRecord]:
+    with session_scope() as s:
+        rows = s.execute(
+            select(ImageRecord).where(ImageRecord.deleted_at.is_not(None))
+        ).scalars().all()
         for r in rows:
             s.expunge(r)
         return list(rows)
@@ -175,6 +216,7 @@ def get_recent_records(limit: int = 50) -> List[ImageRecord]:
         rows = (
             s.execute(
                 select(ImageRecord)
+                .where(ImageRecord.deleted_at.is_(None))
                 .order_by(ImageRecord.created_at.desc())
                 .limit(limit)
             )
@@ -206,7 +248,9 @@ def filter_image_ids(
     # We pull all rows and filter in Python: at prototype scale (hundreds-to-
     # low-thousands of images) the SQL gymnastics aren't worth it.
     with session_scope() as s:
-        records = s.execute(select(ImageRecord)).scalars().all()
+        records = s.execute(
+            select(ImageRecord).where(ImageRecord.deleted_at.is_(None))
+        ).scalars().all()
         result: List[str] = []
         for r in records:
             if ft and (r.source_type or "").lower() not in ft:

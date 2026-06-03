@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { searchConversations } from "../chat/search";
 import type { Conversation } from "../types";
+import { AdminNavLink } from "./AdminNavLink";
 
 interface ChatSidebarProps {
   conversations: Conversation[];
@@ -77,6 +78,7 @@ export function ChatSidebar({
         >
           +
         </button>
+        <AdminNavLink variant="sidebarCollapsed" />
       </div>
     );
   }
@@ -216,6 +218,9 @@ export function ChatSidebar({
           })
         )}
       </ul>
+      <div className="mt-auto border-t border-slate-200 p-2">
+        <AdminNavLink variant="sidebar" />
+      </div>
     </aside>
   );
 }

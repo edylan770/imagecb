@@ -86,8 +86,10 @@ def serve_web(
     """Launch the FastAPI web UI (no npm required)."""
     _configure_logging(verbose)
     from imagecb.api.server import launch
+    from imagecb.api.static_ui import format_serve_web_urls
 
-    typer.echo(f"Imagecb web UI at http://{host}:{port}")
+    for line in format_serve_web_urls(host=host, port=port):
+        typer.echo(line)
     launch(host=host, port=port)
 
 

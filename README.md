@@ -268,26 +268,43 @@ This re-runs the VLM only on failed rows and rebuilds the BM25 index.
 
 ### Launch the web UI (recommended)
 
-No Node.js or npm is required. The UI is bundled as plain HTML/CSS/JS
-under `imagecb/web/static/` and served by the API:
+**IT / no npm:** one Python command serves the **ATLAS** chat UI, admin
+dashboard, and API on port **8080**. The repo ships a pre-built React
+bundle at `imagecb/web/frontend_dist/` — you do not run `npm` locally.
 
 ```powershell
 python -m imagecb.cli serve-web
 ```
 
-Open http://127.0.0.1:8080.
+Startup should print `UI bundle: ATLAS (React, imagecb/web/frontend_dist)`.
+Then open:
 
-If your machine allows npm and you want to hack on the optional React
-frontend in `frontend/`, build it and `serve-web` will prefer
-`frontend/dist/` when present:
+- Chat: http://127.0.0.1:8080/ (hard refresh once if you still see the old UI: Ctrl+Shift+R)
+- Admin: http://127.0.0.1:8080/admin (enter `ADMIN_API_KEY` from `.env`)
+
+If the page still shows the legacy **Imagecb** (light gray) UI, your clone’s
+`frontend_dist` is out of date — `git pull` the latest branch that includes
+an updated bundle (maintainers rebuild it; see below). Do not rely on local
+`npm run build` if your machine cannot run npm.
+
+If `frontend_dist` is missing entirely, `serve-web` falls back to the built-in
+vanilla UI under `imagecb/web/static/` (chat only, no admin).
+
+The Docker image builds the UI at image build time and does not require npm on
+the host either.
+
+**Frontend developers** (machines allowed to run npm) after changing
+`frontend/`:
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run build
 cd ..
-python -m imagecb.cli serve-web
+python scripts/sync_frontend_dist.py
 ```
+
+CI verifies `frontend_dist` stays in sync when `frontend/` changes.
 
 #### Upload from the UI
 
@@ -383,11 +400,43 @@ imagecb/
     hybrid.py            (filter + dense + sparse + RRF)
     rerank.py            (Bedrock rerank + provenance formatting)
     session.py           (multi-turn state, sticky filters, refinement)
+  web/
+    frontend_dist/       (pre-built React UI for serve-web — chat + admin)
+    static/              (fallback vanilla chat UI)
 ```
+
+## Admin layer (telemetry, quality, curation)
+
+Set `ADMIN_API_KEY` in `.env` (see `.env.example`). This key protects:
+
+- All `/api/admin/*` endpoints (analytics, corpus curation, audit log)
+- `POST /api/ingest` (corpus uploads)
+
+### Telemetry
+
+Every chat and similar search records a **search event** (query, user id, served image ids, top raw score, result count). The UI sends **interaction events** (view, download, similar) linked by `search_event_id` from the stream metadata payload.
+
+Optional header `X-User-Id` on chat requests labels telemetry until real SSO is added (default: `anonymous`).
+
+### Admin UI
+
+With `serve-web` running, open **http://127.0.0.1:8080/admin** and enter
+`ADMIN_API_KEY`. The main chat UI also has an **Admin login** link in the
+header and sidebar.
+
+Optional: `npm run dev` in `frontend/` for hot reload at
+**http://localhost:5173/admin** (requires API on 8080 for `/api` proxy).
+
+For local dev you may set `VITE_ADMIN_API_KEY` in `frontend/.env.local`
+(do not commit secrets).
+
+### Soft delete
+
+`POST /api/admin/images/{image_id}/soft-delete` removes the vector from Chroma and rebuilds BM25 while keeping SQLite metadata and cached PNGs. `POST .../restore` re-embeds and re-indexes.
 
 ## Notes / limitations (prototype)
 
-- Single-user, single-process. No auth.
+- Single-user, single-process. Chat is open; admin and ingest require `ADMIN_API_KEY`.
 - No live folder watcher - re-run `ingest` or use **Add to corpus** in the UI for new files.
 - All model inference (embeddings, captioning, query parsing, reranking)
   runs through AWS Bedrock — no local GPU or HuggingFace downloads.

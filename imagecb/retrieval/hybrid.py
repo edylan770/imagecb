@@ -90,7 +90,12 @@ def search(
     rrf = rrf_k or SETTINGS.rrf_k
 
     allowed = _apply_metadata_filter(spec, restrict_to)
-    if allowed is not None and not allowed:
+    active_ids = set(metadata_db.get_active_image_ids())
+    if allowed is None:
+        allowed = list(active_ids)
+    else:
+        allowed = [i for i in allowed if i in active_ids]
+    if not allowed:
         return SearchOutcome(candidates=[])
 
     query_text = dense_query_text(spec)
