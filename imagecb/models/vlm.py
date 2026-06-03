@@ -28,23 +28,30 @@ CAPTION_SYSTEM_PROMPT = (
 
 CAPTION_USER_PROMPT = (
     "Describe this image and return JSON with EXACTLY these keys:\n"
+    "- image_name: short human-friendly title for this image (<= 8 words)\n"
     "- short_caption: <= 20 words, single sentence\n"
     "- detailed_description: 1-3 sentences\n"
+    "- use_case: one sentence describing the most likely business or creative use case\n"
     "- objects: list of salient object/entity names\n"
     "- scene: short phrase for the overall scene/setting\n"
     "- text_overlay_summary: any text visible in the image, or empty string\n"
-    "- tags: list of 3-10 lowercase keywords useful for search"
+    "- tags: list of 3-10 lowercase keywords useful for search\n"
+    "- recommended_cases: list of 2-4 example natural-language search queries a user "
+    "might type to find this image later"
 )
 
 
 @dataclass
 class CaptionJSON:
+    image_name: str = ""
     short_caption: str = ""
     detailed_description: str = ""
+    use_case: str = ""
     objects: List[str] = field(default_factory=list)
     scene: str = ""
     text_overlay_summary: str = ""
     tags: List[str] = field(default_factory=list)
+    recommended_cases: List[str] = field(default_factory=list)
 
     @classmethod
     def empty(cls) -> "CaptionJSON":
@@ -60,12 +67,15 @@ class CaptionJSON:
             return []
 
         return cls(
+            image_name=str(d.get("image_name", "") or ""),
             short_caption=str(d.get("short_caption", "") or ""),
             detailed_description=str(d.get("detailed_description", "") or ""),
+            use_case=str(d.get("use_case", "") or ""),
             objects=_slist(d.get("objects")),
             scene=str(d.get("scene", "") or ""),
             text_overlay_summary=str(d.get("text_overlay_summary", "") or ""),
             tags=_slist(d.get("tags")),
+            recommended_cases=_slist(d.get("recommended_cases")),
         )
 
 
@@ -144,7 +154,7 @@ class VLMCaptioner:
                     ],
                 }
             ],
-            inferenceConfig={"temperature": 0.2, "maxTokens": 800},
+            inferenceConfig={"temperature": 0.2, "maxTokens": 1200},
         )
         parts = [
             block.get("text", "")
@@ -184,7 +194,7 @@ class VLMCaptioner:
         b64 = base64.b64encode(buf.getvalue()).decode("ascii")
         msg = client.messages.create(
             model=self.model,
-            max_tokens=800,
+            max_tokens=1200,
             system=CAPTION_SYSTEM_PROMPT,
             messages=[
                 {

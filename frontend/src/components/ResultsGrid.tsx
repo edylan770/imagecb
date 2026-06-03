@@ -8,7 +8,7 @@ interface ResultsGridProps {
 export function ResultsGrid({ results }: ResultsGridProps) {
   if (results.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-8 text-center text-slate-400">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-8 text-center text-navy-500">
         <svg
           className="mb-3 h-12 w-12 opacity-40"
           fill="none"
@@ -28,7 +28,7 @@ export function ResultsGrid({ results }: ResultsGridProps) {
   }
 
   return (
-    <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-4 overflow-y-auto p-4 sm:grid-cols-2">
+    <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-6 overflow-y-auto p-6 2xl:grid-cols-2">
       {results.map((card) => (
         <ResultCard key={card.image_id} card={card} />
       ))}

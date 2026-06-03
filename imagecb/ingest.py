@@ -79,6 +79,16 @@ def _cache_image(img: Image.Image, image_id: str) -> Path:
     return out_path
 
 
+def _default_image_name(extracted: ExtractedImage) -> str:
+    p = extracted.provenance
+    base = Path(p.source_file or "").stem or "image"
+    if p.source_type == "pptx" and p.slide_index is not None:
+        return f"{base} — slide {p.slide_index}"
+    if p.source_type == "pdf" and p.page_index is not None:
+        return f"{base} — page {p.page_index}"
+    return base
+
+
 def _chroma_metadata(record: ImageRecord) -> dict:
     """Compact, JSON-safe metadata for Chroma filtering & display."""
 
@@ -120,12 +130,15 @@ def _record_for(
         slide_title=p.slide_title,
         slide_notes=p.slide_notes,
         ocr_text=ocr_text,
+        image_name=(caption.image_name or "").strip() or _default_image_name(extracted),
         caption_short=caption.short_caption,
         caption_detailed=caption.detailed_description,
+        use_case=caption.use_case,
         scene=caption.scene,
         text_overlay_summary=caption.text_overlay_summary,
         objects_json=serialize_list(caption.objects),
         tags_json=serialize_list(caption.tags),
+        recommended_cases_json=serialize_list(caption.recommended_cases),
     )
 
 
