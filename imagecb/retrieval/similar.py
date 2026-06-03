@@ -70,8 +70,13 @@ def search_similar(
         return []
 
     dense_k = min(SETTINGS.dense_top_k, max(top_k * 5, 25))
+    active_ids = metadata_db.get_active_image_ids()
     try:
-        hits = vector_store.query(query_emb, top_k=dense_k, allowed_ids=None)
+        hits = vector_store.query(
+            query_emb,
+            top_k=dense_k,
+            allowed_ids=active_ids if active_ids else None,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("Similar search failed: %s", exc)
         return []

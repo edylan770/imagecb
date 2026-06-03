@@ -8,6 +8,8 @@ data/
 .DS_Store
 frontend/node_modules/
 frontend/dist/
+# Shipped React UI (built by CI or maintainer) — required for /admin on serve-web
+!imagecb/web/frontend_dist/
 
 # Test / coverage
 .pytest_cache/

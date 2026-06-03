@@ -92,6 +92,7 @@ class SimilarResponse(BaseModel):
     assistant_message: str
     results: List[ResultCardOut]
     parsed_query: Optional[ParsedQueryOut] = None
+    search_event_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -99,6 +100,19 @@ class ChatResponse(BaseModel):
     assistant_message: str
     results: List[ResultCardOut]
     parsed_query: Optional[ParsedQueryOut] = None
+    search_event_id: Optional[str] = None
+
+
+class InteractionRequest(BaseModel):
+    search_event_id: str
+    image_id: str
+    interaction_type: str  # view | download | similar
+    rank: Optional[int] = None
+
+
+class InteractionResponse(BaseModel):
+    interaction_id: str
+    ok: bool = True
 
 
 class SessionResetRequest(BaseModel):

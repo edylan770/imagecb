@@ -1,0 +1,40 @@
+name: frontend-dist
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-dist.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-dist.yml"
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Sync shipped bundle
+        run: python scripts/sync_frontend_dist.py
+
+      - name: Verify frontend_dist matches build
+        run: |
+          git diff --exit-code imagecb/web/frontend_dist/ || (
+            echo "imagecb/web/frontend_dist is out of date. Run: python scripts/sync_frontend_dist.py"
+            exit 1
+          )
