@@ -196,11 +196,15 @@ export default function App() {
   }, [messages.length, indexedCount, conversations]);
 
   const selectConversation = useCallback(
-    (id: string) => {
+    (id: string, turnId?: string | null) => {
       setActiveConversationId(id);
       persistSoon(conversations, id);
       const c = conversations.find((x) => x.id === id);
-      const turn = c ? lastTurn(c.turns) : null;
+      let turn = c ? lastTurn(c.turns) : null;
+      if (c && turnId) {
+        const matched = c.turns.find((t) => t.id === turnId);
+        if (matched) turn = matched;
+      }
       setSelectedTurnId(turn?.id ?? null);
       applyTurnToPanel(turn, setResults);
       setError(null);

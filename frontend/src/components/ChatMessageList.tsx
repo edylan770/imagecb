@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import type { ChatMessage } from "../types";
 
@@ -12,6 +13,13 @@ export function ChatMessageList({
   selectedTurnId,
   onSelectTurn,
 }: ChatMessageListProps) {
+  useEffect(() => {
+    if (!selectedTurnId) return;
+    document
+      .getElementById(`turn-${selectedTurnId}`)
+      ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selectedTurnId]);
+
   return (
     <div className="flex flex-col gap-3 p-4">
       {messages.map((m, i) => {
@@ -21,6 +29,7 @@ export function ChatMessageList({
 
         return (
           <button
+            id={turnId ? `turn-${turnId}` : undefined}
             key={`${turnId ?? "msg"}-${i}`}
             type="button"
             disabled={!clickable}
