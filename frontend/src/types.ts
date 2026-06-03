@@ -21,6 +21,9 @@ export interface ResultCard {
   use_case?: string;
   tags?: string[];
   recommended_cases?: string[];
+  source_url?: string | null;
+  source_location?: string;
+  source_path?: string | null;
 }
 
 export interface CatalogItem {
@@ -62,6 +65,7 @@ export interface ChatResponse {
   assistant_message: string;
   results: ResultCard[];
   parsed_query?: ParsedQuery | null;
+  search_event_id?: string | null;
 }
 
 export interface ChatStreamMetadata {

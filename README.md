@@ -268,23 +268,30 @@ This re-runs the VLM only on failed rows and rebuilds the BM25 index.
 
 ### Launch the web UI (recommended)
 
-One command serves **chat**, **admin**, and the API on port **8080** — no
-local npm required. The repo includes a pre-built React bundle at
-`imagecb/web/frontend_dist/` (chat + admin dashboard).
+**IT / no npm:** one Python command serves the **ATLAS** chat UI, admin
+dashboard, and API on port **8080**. The repo ships a pre-built React
+bundle at `imagecb/web/frontend_dist/` — you do not run `npm` locally.
 
 ```powershell
 python -m imagecb.cli serve-web
 ```
 
-- Chat: http://127.0.0.1:8080/
+Startup should print `UI bundle: ATLAS (React, imagecb/web/frontend_dist)`.
+Then open:
+
+- Chat: http://127.0.0.1:8080/ (hard refresh once if you still see the old UI: Ctrl+Shift+R)
 - Admin: http://127.0.0.1:8080/admin (enter `ADMIN_API_KEY` from `.env`)
 
-If `frontend_dist` is missing, `serve-web` falls back to the built-in
+If the page still shows the legacy **Imagecb** (light gray) UI, your clone’s
+`frontend_dist` is out of date — `git pull` the latest branch that includes
+an updated bundle (maintainers rebuild it; see below). Do not rely on local
+`npm run build` if your machine cannot run npm.
+
+If `frontend_dist` is missing entirely, `serve-web` falls back to the built-in
 vanilla UI under `imagecb/web/static/` (chat only, no admin).
 
-**IT / no-script environments:** you do not need to run `npm run build`
-locally. Use the committed `imagecb/web/frontend_dist/` or the Docker
-image (which builds the UI at image build time).
+The Docker image builds the UI at image build time and does not require npm on
+the host either.
 
 **Frontend developers** (machines allowed to run npm) after changing
 `frontend/`:

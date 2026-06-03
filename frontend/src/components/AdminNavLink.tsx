@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { getAdminApiKey } from "../api/adminClient";
 
-type Variant = "header" | "sidebar" | "sidebarCollapsed";
+type Variant = "header" | "headerDark" | "sidebar" | "sidebarCollapsed";
 
 interface AdminNavLinkProps {
   variant: Variant;
@@ -28,15 +28,32 @@ export function AdminNavLink({ variant }: AdminNavLinkProps) {
   const hasKey = !!getAdminApiKey();
   const label = hasKey ? "Admin" : "Admin login";
   const title = hasKey
-    ? "Open admin dashboard"
+    ? "Open ATLAS admin dashboard"
     : "Sign in with admin API key";
+
+  if (variant === "headerDark") {
+    return (
+      <Link
+        to="/admin"
+        title={title}
+        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+          hasKey
+            ? "text-white/90 ring-1 ring-white/25 hover:bg-white/10"
+            : "text-white/80 ring-1 ring-white/20 hover:bg-white/10 hover:text-white"
+        }`}
+      >
+        <LockIcon className="h-4 w-4 shrink-0" />
+        {label}
+      </Link>
+    );
+  }
 
   if (variant === "sidebarCollapsed") {
     return (
       <Link
         to="/admin"
         title={title}
-        className="mt-2 flex rounded-lg p-2 text-slate-500 ring-1 ring-transparent transition hover:bg-slate-200 hover:text-brand-600 hover:ring-slate-200"
+        className="mt-2 flex rounded-lg p-2 text-navy-500 ring-1 ring-transparent transition hover:bg-navy-200 hover:text-brand-600 hover:ring-navy-200"
         aria-label={label}
       >
         <LockIcon className="h-5 w-5" />
@@ -49,7 +66,7 @@ export function AdminNavLink({ variant }: AdminNavLinkProps) {
       <Link
         to="/admin"
         title={title}
-        className="flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 ring-1 ring-slate-200 transition hover:bg-white hover:text-brand-600 hover:ring-brand-200"
+        className="flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-navy-600 ring-1 ring-navy-200 transition hover:bg-white hover:text-brand-600 hover:ring-brand-200"
       >
         <LockIcon className="h-4 w-4 shrink-0" />
         {label}
@@ -63,8 +80,8 @@ export function AdminNavLink({ variant }: AdminNavLinkProps) {
       title={title}
       className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
         hasKey
-          ? "text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 hover:text-brand-600"
-          : "text-slate-600 ring-1 ring-slate-200 hover:bg-brand-50 hover:text-brand-700 hover:ring-brand-200"
+          ? "text-navy-700 ring-1 ring-navy-200 hover:bg-navy-50 hover:text-brand-600"
+          : "text-navy-600 ring-1 ring-navy-200 hover:bg-brand-50 hover:text-brand-700 hover:ring-brand-200"
       }`}
     >
       <LockIcon className="h-4 w-4 shrink-0" />

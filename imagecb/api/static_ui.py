@@ -28,12 +28,26 @@ def resolve_static_dir() -> tuple[Path | None, StaticUiKind]:
     return None, StaticUiKind.NONE
 
 
+def _react_bundle_label(static_dir: Path) -> str:
+    """Human-readable label for the mounted React bundle (ATLAS vs legacy)."""
+    try:
+        html = (static_dir / "index.html").read_text(encoding="utf-8")
+    except OSError:
+        return "React"
+    if "ATLAS" in html.upper():
+        return "ATLAS (React, imagecb/web/frontend_dist)"
+    if static_dir == _SHIPPED_REACT:
+        return "React (imagecb/web/frontend_dist)"
+    return "React (frontend/dist)"
+
+
 def format_serve_web_urls(*, host: str, port: int) -> list[str]:
     """Lines to print when starting serve-web."""
     static, kind = resolve_static_dir()
     base = f"http://{host}:{port}"
     lines = [f"Chat UI:   {base}/"]
-    if kind == StaticUiKind.REACT:
+    if kind == StaticUiKind.REACT and static is not None:
+        lines.append(f"UI bundle: {_react_bundle_label(static)}")
         lines.append(f"Admin UI:  {base}/admin")
         return lines
     lines.append(

@@ -216,6 +216,7 @@ def get_recent_records(limit: int = 50) -> List[ImageRecord]:
         rows = (
             s.execute(
                 select(ImageRecord)
+                .where(ImageRecord.deleted_at.is_(None))
                 .order_by(ImageRecord.created_at.desc())
                 .limit(limit)
             )

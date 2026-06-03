@@ -46,14 +46,12 @@ export function ResultCard({
   };
 
   return (
-    <article className="flex flex-col overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-navy-200 transition hover:shadow-lg hover:ring-brand-300">
-      <div className="relative aspect-video bg-navy-50">
     <article
-      className="flex flex-col overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-slate-200 transition hover:shadow-lg"
+      className="flex flex-col overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-navy-200 transition hover:shadow-lg hover:ring-brand-300"
       onClick={handleView}
       role="presentation"
     >
-      <div className="relative aspect-video bg-slate-100">
+      <div className="relative aspect-video bg-navy-50">
         {card.has_image_file ? (
           <img
             src={card.image_url}
@@ -126,7 +124,7 @@ export function ResultCard({
           </p>
         )}
         <div
-          className="mt-1 flex flex-wrap gap-2 border-t border-slate-100 pt-2"
+          className="mt-1 flex flex-wrap gap-2 border-t border-navy-100 pt-2"
           onClick={(e) => e.stopPropagation()}
         >
           {card.source_url && (

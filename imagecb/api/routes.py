@@ -37,11 +37,11 @@ from imagecb.api.sessions import get_or_create_session, get_session, reset_sessi
 from imagecb.config import SETTINGS
 from imagecb.formatting.assistant_reply import (
     _display_caption,
+    build_assistant_reply,
     build_result_cards,
     catalog_fields_from_record,
     provenance_from_record,
 )
-from imagecb.formatting.assistant_reply import build_assistant_reply, build_result_cards
 from imagecb.telemetry.recorder import record_interaction, record_search_from_results
 from imagecb.formatting.conversational_reply import (
     build_conversational_reply,

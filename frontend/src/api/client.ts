@@ -230,6 +230,7 @@ export async function ingestFiles(
   form.append("force", String(flags.force));
   if (flags.workers != null) {
     form.append("workers", String(flags.workers));
+  }
   const key = getAdminApiKey();
   if (!key) {
     throw new Error("Admin API key required for ingest (set in Admin settings)");
@@ -302,6 +303,8 @@ export async function fetchCorpusCatalog(
   return request<CorpusCatalogResponse>(
     `/api/corpus/catalog?limit=${encodeURIComponent(String(limit))}`,
   );
+}
+
 export async function sendSimilar(
   imageId: string,
   sessionId: string | null,

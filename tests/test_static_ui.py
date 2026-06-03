@@ -13,3 +13,12 @@ def test_resolve_static_prefers_shipped_frontend_dist():
     assert shipped.is_dir()
     assert kind == StaticUiKind.REACT
     assert static == shipped
+
+
+def test_shipped_frontend_dist_is_atlas_bundle():
+    index = (
+        Path(__file__).resolve().parents[1] / "imagecb" / "web" / "frontend_dist" / "index.html"
+    )
+    assert index.is_file()
+    html = index.read_text(encoding="utf-8")
+    assert "ATLAS" in html.upper()
