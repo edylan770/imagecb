@@ -3,9 +3,21 @@ import { ResultCard } from "./ResultCard";
 
 interface ResultsGridProps {
   results: ResultCardType[];
+  searchEventId?: string | null;
+  sessionId?: string | null;
+  topK?: number;
+  minMatchPercent?: number;
+  onSimilarResults?: (results: ResultCardType[], searchEventId?: string | null) => void;
 }
 
-export function ResultsGrid({ results }: ResultsGridProps) {
+export function ResultsGrid({
+  results,
+  searchEventId,
+  sessionId,
+  topK,
+  minMatchPercent,
+  onSimilarResults,
+}: ResultsGridProps) {
   if (results.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-8 text-center text-slate-400">
@@ -30,7 +42,15 @@ export function ResultsGrid({ results }: ResultsGridProps) {
   return (
     <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-4 overflow-y-auto p-4 sm:grid-cols-2">
       {results.map((card) => (
-        <ResultCard key={card.image_id} card={card} />
+        <ResultCard
+          key={card.image_id}
+          card={card}
+          searchEventId={searchEventId}
+          sessionId={sessionId}
+          topK={topK}
+          minMatchPercent={minMatchPercent}
+          onSimilarResults={onSimilarResults}
+        />
       ))}
     </div>
   );

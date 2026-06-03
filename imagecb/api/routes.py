@@ -7,17 +7,20 @@ import json
 import logging
 from typing import Iterator, List, Optional
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image
 
 from imagecb.api.interpretation import build_interpretation_notes
 from imagecb.api.query_format import format_query_error, spec_to_parsed_query
+from imagecb.api.auth import require_admin, resolve_user_id
 from imagecb.api.schemas import (
     ChatRequest,
     ChatResponse,
     HealthResponse,
     IngestResponse,
+    InteractionRequest,
+    InteractionResponse,
     ProvenanceOut,
     ResultCardOut,
     SessionResetRequest,
@@ -29,7 +32,8 @@ from imagecb.api.schemas import (
     SuggestionsResponse,
 )
 from imagecb.api.sessions import get_or_create_session, get_session, reset_session
-from imagecb.formatting.assistant_reply import build_result_cards
+from imagecb.formatting.assistant_reply import build_assistant_reply, build_result_cards
+from imagecb.telemetry.recorder import record_interaction, record_search_from_results
 from imagecb.formatting.conversational_reply import (
     build_conversational_reply,
     iter_conversational_reply_text,
@@ -119,8 +123,31 @@ def suggestions(body: SuggestionsRequest) -> SuggestionsResponse:
     )
 
 
+@router.post("/telemetry/interaction", response_model=InteractionResponse)
+def telemetry_interaction(
+    body: InteractionRequest,
+    user_id: str = Depends(resolve_user_id),
+) -> InteractionResponse:
+    if body.interaction_type not in ("view", "download", "similar"):
+        raise HTTPException(status_code=400, detail="invalid interaction_type")
+    try:
+        iid = record_interaction(
+            search_event_id=body.search_event_id,
+            image_id=body.image_id,
+            interaction_type=body.interaction_type,  # type: ignore[arg-type]
+            user_id=user_id,
+            rank=body.rank,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return InteractionResponse(interaction_id=iid)
+
+
 @router.post("/chat", response_model=ChatResponse)
-def chat(body: ChatRequest) -> ChatResponse:
+def chat(
+    body: ChatRequest,
+    user_id: str = Depends(resolve_user_id),
+) -> ChatResponse:
     message = (body.message or "").strip()
     if not message:
         raise HTTPException(status_code=400, detail="message is required")
@@ -161,16 +188,28 @@ def chat(body: ChatRequest) -> ChatResponse:
         indexed_count=indexed_count,
     )
     session.record_turn(message, reply.message)
+    search_event_id = record_search_from_results(
+        query_text=message,
+        user_id=user_id,
+        session_id=session_id,
+        search_kind="chat",
+        results=ask_result.results,
+        spec=spec,
+    )
     return ChatResponse(
         session_id=session_id,
         assistant_message=reply.message,
         results=[_result_card_out(c) for c in reply.results],
         parsed_query=_parsed_with_notes(spec, notes),
+        search_event_id=search_event_id,
     )
 
 
 @router.post("/chat/stream")
-def chat_stream(body: ChatRequest) -> StreamingResponse:
+def chat_stream(
+    body: ChatRequest,
+    user_id: str = Depends(resolve_user_id),
+) -> StreamingResponse:
     message = (body.message or "").strip()
     if not message:
         raise HTTPException(status_code=400, detail="message is required")
@@ -206,12 +245,21 @@ def chat_stream(body: ChatRequest) -> StreamingResponse:
     result_cards = build_result_cards(ask_result.results)
     results_out = [_result_card_out(c) for c in result_cards]
     parsed_out = _parsed_with_notes(spec, notes)
+    search_event_id = record_search_from_results(
+        query_text=message,
+        user_id=user_id,
+        session_id=session_id,
+        search_kind="chat",
+        results=ask_result.results,
+        spec=spec,
+    )
 
     def event_stream() -> Iterator[str]:
         yield _sse_event(
             {
                 "type": "metadata",
                 "session_id": session_id,
+                "search_event_id": search_event_id,
                 "results": [r.model_dump() for r in results_out],
                 "parsed_query": parsed_out.model_dump() if parsed_out else None,
             }
@@ -257,6 +305,7 @@ async def similar(
     session_id: Optional[str] = Form(None),
     top_k: int = Form(10),
     min_match_percent: int = Form(0),
+    user_id: str = Depends(resolve_user_id),
 ) -> SimilarResponse:
     """Find visually similar images (JSON body or multipart with optional file)."""
     ref_id: Optional[str] = None
@@ -325,11 +374,22 @@ async def similar(
             session.apply_similar_results(results, top_k=k)
             out_session_id = out_session_id
 
+    query_label = "[similar image search]"
+    search_event_id = record_search_from_results(
+        query_text=query_label,
+        user_id=user_id,
+        session_id=out_session_id,
+        search_kind="similar",
+        results=results,
+        spec=spec,
+    )
+
     return SimilarResponse(
         session_id=out_session_id,
         assistant_message=msg,
         results=[_result_card_out(c) for c in reply.results],
         parsed_query=_parsed_with_notes(spec, notes),
+        search_event_id=search_event_id,
     )
 
 
@@ -371,6 +431,7 @@ async def ingest(
     skip_caption: bool = Form(False),
     skip_ocr: bool = Form(False),
     force: bool = Form(False),
+    _: str = Depends(require_admin),
 ) -> IngestResponse:
     if not files:
         raise HTTPException(status_code=400, detail="at least one file is required")

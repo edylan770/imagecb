@@ -82,3 +82,49 @@ def query(
 def count() -> int:
     col = _get_collection()
     return col.count()
+
+
+def delete(image_ids: Sequence[str]) -> None:
+    if not image_ids:
+        return
+    col = _get_collection()
+    col.delete(ids=list(image_ids))
+
+
+def get_all_embeddings(*, batch_size: int = 500) -> List[tuple[str, np.ndarray]]:
+    """Return (image_id, embedding) for all vectors in the collection."""
+    col = _get_collection()
+    n = col.count()
+    if n == 0:
+        return []
+    out: List[tuple[str, np.ndarray]] = []
+
+    def _consume(res: dict) -> None:
+        ids = res.get("ids") or []
+        embs = res.get("embeddings") or []
+        for i, emb in zip(ids, embs):
+            if emb is None:
+                continue
+            try:
+                arr = np.asarray(emb, dtype=np.float64)
+            except (ValueError, TypeError):
+                continue
+            if arr.ndim != 1 or arr.size == 0:
+                continue
+            out.append((str(i), arr))
+
+    try:
+        offset = 0
+        while offset < n:
+            limit = min(batch_size, n - offset)
+            res = col.get(
+                include=["embeddings"],
+                limit=limit,
+                offset=offset,
+            )
+            offset += limit
+            _consume(res)
+    except TypeError:
+        res = col.get(include=["embeddings"], limit=n)
+        _consume(res)
+    return out

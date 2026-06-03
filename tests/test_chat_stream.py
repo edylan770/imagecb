@@ -34,11 +34,13 @@ def _ask_result() -> AskResult:
     )
 
 
+@patch("imagecb.api.routes.record_search_from_results", return_value="evt-1")
 @patch("imagecb.api.routes.get_or_create_session")
 @patch("imagecb.api.routes.iter_conversational_reply_text")
 def test_chat_stream_emits_metadata_tokens_done(
     mock_iter,
     mock_session_factory,
+    _mock_record,
     client,
 ):
     mock_session = MagicMock()
@@ -63,6 +65,7 @@ def test_chat_stream_emits_metadata_tokens_done(
     assert events[-1]["assistant_message"] == "Hello world"
     mock_session.record_turn.assert_called_once_with("find charts", "Hello world")
     assert events[0]["session_id"] == "sess-1"
+    assert events[0]["search_event_id"] == "evt-1"
 
 
 @patch("imagecb.api.routes.get_or_create_session")

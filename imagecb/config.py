@@ -109,6 +109,15 @@ class Settings:
         default_factory=lambda: int(_env("INGEST_BATCH_UPSERT", "16") or "16")
     )
 
+    # Admin / telemetry
+    admin_api_key: str = field(default_factory=lambda: _env("ADMIN_API_KEY", "") or "")
+    weak_result_score_threshold: float = field(
+        default_factory=lambda: float(_env("WEAK_RESULT_SCORE_THRESHOLD", "0.25") or "0.25")
+    )
+    duplicate_similarity_threshold: float = field(
+        default_factory=lambda: float(_env("DUPLICATE_SIMILARITY_THRESHOLD", "0.95") or "0.95")
+    )
+
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.chroma_dir.mkdir(parents=True, exist_ok=True)

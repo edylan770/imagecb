@@ -1,3 +1,5 @@
+import { AdminNavLink } from "./AdminNavLink";
+
 interface HeaderProps {
   indexedCount: number;
   onOpenCorpus: () => void;
@@ -16,6 +18,7 @@ export function Header({ indexedCount, onOpenCorpus }: HeaderProps) {
         </p>
       </div>
       <div className="flex items-center gap-3">
+        <AdminNavLink variant="header" />
         <span className="rounded-full bg-brand-50 px-3 py-1 text-sm font-medium text-brand-700 ring-1 ring-brand-100">
           {indexedCount} indexed
         </span>
