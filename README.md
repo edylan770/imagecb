@@ -350,7 +350,7 @@ API: `POST /api/deck/suggest` (multipart `.pptx`), `POST /api/deck/force` (JSON)
 
 - **Find similar** on any result card runs visual similarity search (no
   query LLM).
-- **Attach** in the composer uploads a reference image for similarity
+- **Camera** in the composer uploads a reference image for similarity
   search.
 - **Open source** downloads the original `.pptx`, `.pdf`, or image file;
   **Copy path** puts the on-disk path on the clipboard (use with slide/page

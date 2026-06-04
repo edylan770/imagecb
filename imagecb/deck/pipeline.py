@@ -45,7 +45,12 @@ def _slide_hashes(slides: List[SlideContent]) -> List[str]:
     return [s.content_hash for s in slides]
 
 
-def _build_suggestion_from_manifest_entry(entry: dict) -> SlideSuggestion:
+def _build_suggestion_from_manifest_entry(
+    entry: dict,
+    *,
+    llm_cached: bool = True,
+    search_cached: bool | None = None,
+) -> SlideSuggestion:
     return SlideSuggestion(
         slide_index=int(entry.get("slide_index", 0)),
         title=entry.get("title"),
@@ -56,9 +61,62 @@ def _build_suggestion_from_manifest_entry(entry: dict) -> SlideSuggestion:
         description=str(entry.get("description", "") or ""),
         reason=str(entry.get("reason", "") or ""),
         results=list(entry.get("results") or []),
-        llm_cached=True,
-        search_cached=bool(entry.get("search_cached")),
+        llm_cached=llm_cached,
+        search_cached=(
+            bool(entry.get("search_cached"))
+            if search_cached is None
+            else search_cached
+        ),
     )
+
+
+def _slide_stub_from_manifest_entry(entry: dict) -> SlideContent:
+    return SlideContent(
+        slide_index=int(entry.get("slide_index", 0)),
+        title=entry.get("title"),
+        body=str(entry.get("body") or entry.get("body_preview") or ""),
+        notes=entry.get("notes") or entry.get("notes_preview"),
+        content_hash=str(entry.get("content_hash", "")),
+    )
+
+
+def _refresh_suggestions_from_manifest(
+    manifest_entries: List[dict],
+    *,
+    top_k: int,
+    min_match_percent: int,
+) -> List[SlideSuggestion]:
+    """Re-run search for manifest slides when request params or corpus changed."""
+    suggestions: List[SlideSuggestion] = []
+    for entry in manifest_entries:
+        llm_out = SlideLLMOutput(
+            slide_index=int(entry.get("slide_index", 0)),
+            status=str(entry.get("status", "no_image_needed")),
+            description=str(entry.get("description", "") or ""),
+            reason=str(entry.get("reason", "") or ""),
+        )
+        results: List[dict] = []
+        search_cached = False
+        if llm_out.status == "image_needed" and llm_out.description:
+            slide_stub = _slide_stub_from_manifest_entry(entry)
+            results, search_cached = _run_search_for_slide(
+                slide_stub,
+                llm_out,
+                top_k=top_k,
+                min_match_percent=min_match_percent,
+            )
+        suggestions.append(
+            _build_suggestion_from_manifest_entry(
+                {
+                    **entry,
+                    "results": results,
+                    "search_cached": search_cached,
+                },
+                llm_cached=True,
+                search_cached=search_cached,
+            )
+        )
+    return suggestions
 
 
 def _manifest_entries_from_slides(
@@ -168,13 +226,48 @@ def process_deck_upload(
     hashes = _slide_hashes(slides)
     d_hash = deck_hash(hashes)
 
+    req_fp = deck_cache.request_fingerprint(
+        top_k=top_k,
+        min_match_percent=min_match_percent,
+    )
     manifest = deck_cache.get_deck_manifest(d_hash)
     if manifest is not None and manifest.slides:
+        if manifest.request_fingerprint == req_fp:
+            return DeckSuggestResult(
+                deck_hash=d_hash,
+                filename=filename,
+                slides=[
+                    _build_suggestion_from_manifest_entry(e) for e in manifest.slides
+                ],
+                deck_cached=True,
+                llm_batches=0,
+            )
+        suggestions = _refresh_suggestions_from_manifest(
+            manifest.slides,
+            top_k=top_k,
+            min_match_percent=min_match_percent,
+        )
+        refreshed_entries = _manifest_entries_from_slides(suggestions)
+        orig_by_index = {int(e.get("slide_index", 0)): e for e in manifest.slides}
+        for entry in refreshed_entries:
+            orig = orig_by_index.get(int(entry["slide_index"]))
+            if orig:
+                if orig.get("body"):
+                    entry["body"] = orig["body"]
+                if orig.get("notes") is not None:
+                    entry["notes"] = orig["notes"]
+        deck_cache.put_deck_manifest(
+            d_hash,
+            filename,
+            hashes,
+            refreshed_entries,
+            request_fingerprint=req_fp,
+        )
         return DeckSuggestResult(
             deck_hash=d_hash,
             filename=filename,
-            slides=[_build_suggestion_from_manifest_entry(e) for e in manifest.slides],
-            deck_cached=True,
+            slides=suggestions,
+            deck_cached=False,
             llm_batches=0,
         )
 
@@ -234,6 +327,7 @@ def process_deck_upload(
         filename,
         hashes,
         _manifest_entries_from_slides(suggestions, source_slides=slides),
+        request_fingerprint=req_fp,
     )
 
     return DeckSuggestResult(
@@ -314,6 +408,10 @@ def force_slide_image(
         manifest.filename,
         manifest.slide_hashes,
         updated_slides,
+        request_fingerprint=deck_cache.request_fingerprint(
+            top_k=top_k,
+            min_match_percent=min_match_percent,
+        ),
     )
 
     return suggestion

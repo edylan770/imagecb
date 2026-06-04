@@ -73,6 +73,7 @@ export interface SimilarResponse {
   assistant_message: string;
   results: ResultCard[];
   parsed_query?: ParsedQuery | null;
+  search_event_id?: string | null;
 }
 
 export interface ChatStreamMetadata {

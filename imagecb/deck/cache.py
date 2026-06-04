@@ -43,6 +43,7 @@ class DeckManifest:
     filename: str
     slide_hashes: List[str]
     slides: List[dict]
+    request_fingerprint: str = ""
     created_at: float = field(default_factory=time.time)
 
 
@@ -56,6 +57,20 @@ def _deck_cache_path(deck_hash: str) -> Path:
 
 def corpus_fingerprint() -> str:
     return build_corpus_context().fingerprint
+
+
+def request_fingerprint(*, top_k: int, min_match_percent: int) -> str:
+    """Fingerprint for deck-level manifest cache (search params + corpus)."""
+    raw = json.dumps(
+        {
+            "top_k": top_k,
+            "min_match_percent": min_match_percent,
+            "corpus": corpus_fingerprint(),
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
 def search_fingerprint(description: str, *, top_k: int, min_match_percent: int) -> str:
@@ -189,6 +204,7 @@ def get_deck_manifest(deck_hash: str) -> Optional[DeckManifest]:
         filename=str(data.get("filename", "")),
         slide_hashes=list(data.get("slide_hashes") or []),
         slides=list(data.get("slides") or []),
+        request_fingerprint=str(data.get("request_fingerprint", "") or ""),
         created_at=float(data.get("created_at", 0)),
     )
 
@@ -198,6 +214,8 @@ def put_deck_manifest(
     filename: str,
     slide_hashes: Sequence[str],
     slides: List[dict],
+    *,
+    request_fingerprint: str = "",
 ) -> None:
     if not SETTINGS.deck_cache_enabled:
         return
@@ -208,6 +226,7 @@ def put_deck_manifest(
             "filename": filename,
             "slide_hashes": list(slide_hashes),
             "slides": slides,
+            "request_fingerprint": request_fingerprint,
             "created_at": time.time(),
         },
     )

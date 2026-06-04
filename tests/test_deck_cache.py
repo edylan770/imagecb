@@ -13,6 +13,7 @@ from imagecb.deck.cache import (
     get_slide_llm_cache,
     put_deck_manifest,
     put_slide_llm_cache,
+    request_fingerprint,
     search_fingerprint,
 )
 from imagecb.deck.llm import SlideLLMOutput
@@ -71,3 +72,28 @@ def test_search_fingerprint_includes_corpus(monkeypatch):
     fp1 = search_fingerprint("query", top_k=10, min_match_percent=0)
     fp2 = search_fingerprint("query", top_k=5, min_match_percent=0)
     assert fp1 != fp2
+
+
+def test_request_fingerprint_includes_corpus_and_params(monkeypatch):
+    monkeypatch.setattr(
+        "imagecb.deck.cache.corpus_fingerprint",
+        lambda: "corpfp",
+    )
+    fp1 = request_fingerprint(top_k=10, min_match_percent=0)
+    fp2 = request_fingerprint(top_k=5, min_match_percent=0)
+    fp3 = request_fingerprint(top_k=10, min_match_percent=50)
+    assert fp1 != fp2
+    assert fp1 != fp3
+
+
+def test_deck_manifest_stores_request_fingerprint(deck_cache_dir):
+    put_deck_manifest(
+        "deck1",
+        "demo.pptx",
+        ["h1"],
+        [{"slide_index": 1}],
+        request_fingerprint="reqfp",
+    )
+    m = get_deck_manifest("deck1")
+    assert m is not None
+    assert m.request_fingerprint == "reqfp"

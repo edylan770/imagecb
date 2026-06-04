@@ -1,12 +1,9 @@
 import { useRef, type KeyboardEvent } from "react";
+import { Link } from "react-router-dom";
 import type { SearchHistoryEntry } from "../types";
 import { SearchHistoryChips } from "./SearchHistoryChips";
 
 const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff";
-import type { KeyboardEvent } from "react";
-import { Link } from "react-router-dom";
-import type { SearchHistoryEntry } from "../types";
-import { SearchHistoryChips } from "./SearchHistoryChips";
 
 function DeckSuggestIcon() {
   return (
@@ -113,6 +110,14 @@ export function Composer({
           >
             <CameraIcon />
           </button>
+          <Link
+            to="/deck"
+            title="Deck suggest"
+            aria-label="Open deck suggest"
+            className="rounded-xl border border-navy-200 p-2.5 text-navy-600 transition hover:border-brand-400 hover:bg-brand-50 hover:text-brand-600"
+          >
+            <DeckSuggestIcon />
+          </Link>
           <button
             type="button"
             onClick={onSend}
@@ -122,22 +127,6 @@ export function Composer({
             {loading ? "…" : "Send"}
           </button>
         </div>
-        <Link
-          to="/deck"
-          title="Deck suggest"
-          aria-label="Open deck suggest"
-          className="self-end rounded-xl border border-navy-200 p-2 text-navy-600 transition hover:bg-navy-50 hover:text-brand-600"
-        >
-          <DeckSuggestIcon />
-        </Link>
-        <button
-          type="button"
-          onClick={onSend}
-          disabled={loading || !value.trim()}
-          className="self-end rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-400 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {loading ? "…" : "Send"}
-        </button>
       </div>
       <input
         ref={imageInputRef}
