@@ -1,6 +1,5 @@
 import tistaLogoUrl from "../assets/tista-logo.png";
 import { Link } from "react-router-dom";
-import { AdminNavLink } from "./AdminNavLink";
 import { AtlasAcronymLine, AtlasWordmark } from "./AtlasBranding";
 
 interface HeaderProps {
@@ -23,7 +22,6 @@ export function Header({ indexedCount, onOpenCorpus }: HeaderProps) {
           >
             Deck suggest
           </Link>
-          <AdminNavLink variant="headerDark" />
           <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-white ring-1 ring-white/20">
             {indexedCount} indexed
           </span>

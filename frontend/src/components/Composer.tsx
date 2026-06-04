@@ -1,7 +1,5 @@
 import { useRef, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
-import type { SearchHistoryEntry } from "../types";
-import { SearchHistoryChips } from "./SearchHistoryChips";
 
 const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff";
 
@@ -30,13 +28,10 @@ interface ComposerProps {
   topK: number;
   minMatchPercent: number;
   loading: boolean;
-  searchHistory: SearchHistoryEntry[];
   onChange: (value: string) => void;
   onTopKChange: (value: number) => void;
   onMinMatchPercentChange: (value: number) => void;
   onSend: () => void;
-  onRerunSearch: (entry: SearchHistoryEntry) => void;
-  onClearSearchHistory: () => void;
   onSimilarImageSearch: (file: File) => void;
 }
 
@@ -69,13 +64,10 @@ export function Composer({
   topK,
   minMatchPercent,
   loading,
-  searchHistory,
   onChange,
   onTopKChange,
   onMinMatchPercentChange,
   onSend,
-  onRerunSearch,
-  onClearSearchHistory,
   onSimilarImageSearch,
 }: ComposerProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -148,12 +140,12 @@ export function Composer({
           <input
             type="range"
             min={1}
-            max={30}
+            max={50}
             value={topK}
             onChange={(e) => onTopKChange(Number(e.target.value))}
             className="accent-brand-600"
           />
-          <span className="w-6 font-medium text-navy-800">{topK}</span>
+          <span className="w-7 font-medium text-navy-800">{topK}</span>
         </label>
         <label className="flex items-center gap-2 text-xs text-navy-600">
           <span>Min match %</span>
@@ -168,13 +160,6 @@ export function Composer({
           <span className="w-8 font-medium text-navy-800">{minMatchPercent}</span>
         </label>
       </div>
-      <SearchHistoryChips
-        history={searchHistory}
-        onSelect={onRerunSearch}
-        onClear={onClearSearchHistory}
-        maxItems={4}
-        className="mt-2 border-t border-navy-100 pt-2"
-      />
     </div>
   );
 }

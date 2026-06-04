@@ -9,14 +9,11 @@ import {
   sendChatStream,
 } from "./api/client";
 import {
-  appendSearchHistory,
   createConversation,
   lastTurn,
-  loadSearchHistory,
   loadStoredState,
   newTurnId,
   recentChatTitles,
-  saveSearchHistory,
   saveStoredState,
   titleFromMessage,
   turnsToMessages,
@@ -26,6 +23,7 @@ import { ChatSidebar } from "./components/ChatSidebar";
 import { Composer } from "./components/Composer";
 import { CorpusDrawer } from "./components/CorpusDrawer";
 import { EmptyState } from "./components/EmptyState";
+import { AdminNavLink } from "./components/AdminNavLink";
 import { Header } from "./components/Header";
 import { ResultsGrid } from "./components/ResultsGrid";
 import type {
@@ -33,7 +31,6 @@ import type {
   Conversation,
   ConversationTurn,
   ResultCard,
-  SearchHistoryEntry,
 } from "./types";
 
 function applyTurnToPanel(
@@ -74,7 +71,6 @@ export default function App() {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-  const [searchHistory, setSearchHistory] = useState<SearchHistoryEntry[]>([]);
   const [searchEventId, setSearchEventId] = useState<string | null>(null);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -131,7 +127,6 @@ export default function App() {
 
     setConversations(list);
     setActiveConversationId(activeId);
-    setSearchHistory(loadSearchHistory());
     const active = list.find((c) => c.id === activeId);
     const turn = active ? lastTurn(active.turns) : null;
     applyTurnToPanel(turn, setResults);
@@ -270,27 +265,6 @@ export default function App() {
     [activeConversation],
   );
 
-  const recordSearchHistory = useCallback(
-    (query: string, historyTopK: number, historyMinMatchPercent: number) => {
-      setSearchHistory((prev) => {
-        const next = appendSearchHistory(prev, {
-          query,
-          timestamp: Date.now(),
-          topK: historyTopK,
-          minMatchPercent: historyMinMatchPercent,
-        });
-        saveSearchHistory(next);
-        return next;
-      });
-    },
-    [],
-  );
-
-  const handleClearSearchHistory = useCallback(() => {
-    setSearchHistory([]);
-    saveSearchHistory([]);
-  }, []);
-
   const runSearch = async (
     text: string,
     effectiveTopK: number,
@@ -313,8 +287,6 @@ export default function App() {
     setError(null);
     setLoading(true);
     setInput("");
-    recordSearchHistory(text, effectiveTopK, effectiveMinMatchPercent);
-
     const turnId = newTurnId();
     const sessionId = conv.sessionId;
 
@@ -548,15 +520,6 @@ export default function App() {
     await runSearch(text, topK, minMatchPercent);
   };
 
-  const handleRerunSearch = (entry: SearchHistoryEntry) => {
-    if (loading) return;
-    const effectiveTopK = entry.topK ?? topK;
-    const effectiveMinMatchPercent = entry.minMatchPercent ?? minMatchPercent;
-    if (entry.topK != null) setTopK(entry.topK);
-    if (entry.minMatchPercent != null) setMinMatchPercent(entry.minMatchPercent);
-    void runSearch(entry.query, effectiveTopK, effectiveMinMatchPercent);
-  };
-
   const handleIngest = async (files: File[]) => {
     if (!files.length) return;
     setIngesting(true);
@@ -644,10 +607,7 @@ export default function App() {
                   <EmptyState
                     suggestions={suggestions}
                     loading={suggestionsLoading}
-                    searchHistory={searchHistory}
                     onPickExample={setInput}
-                    onRerunSearch={handleRerunSearch}
-                    onClearSearchHistory={handleClearSearchHistory}
                   />
                 ) : (
                   <ChatMessageList
@@ -662,13 +622,10 @@ export default function App() {
                 topK={topK}
                 minMatchPercent={minMatchPercent}
                 loading={loading}
-                searchHistory={searchHistory}
                 onChange={setInput}
                 onTopKChange={setTopK}
                 onMinMatchPercentChange={setMinMatchPercent}
                 onSend={handleSend}
-                onRerunSearch={handleRerunSearch}
-                onClearSearchHistory={handleClearSearchHistory}
                 onSimilarImageSearch={handleSimilarImageSearch}
               />
             </section>
@@ -703,10 +660,13 @@ export default function App() {
         </section>
       </main>
 
-      <footer className="shrink-0 border-t border-navy-800 bg-navy-950 px-5 py-1 text-[11px] text-white/50">
-        <span className="font-semibold text-white/80">ATLAS</span>
-        {" · "}
-        {indexedCount} indexed images
+      <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-navy-800 bg-navy-950 px-5 py-1.5 text-[11px] text-white/50">
+        <span>
+          <span className="font-semibold text-white/80">ATLAS</span>
+          {" · "}
+          {indexedCount} indexed images
+        </span>
+        <AdminNavLink variant="footer" />
       </footer>
 
       <CorpusDrawer
