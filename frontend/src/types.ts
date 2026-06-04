@@ -127,3 +127,31 @@ export interface SearchHistoryEntry {
   topK?: number;
   minMatchPercent?: number;
 }
+
+export interface SlideSuggestion {
+  slide_index: number;
+  title?: string | null;
+  body_preview: string;
+  notes_preview: string;
+  content_hash: string;
+  status: "image_needed" | "no_image_needed";
+  description: string;
+  reason: string;
+  results: ResultCard[];
+  llm_cached: boolean;
+  search_cached: boolean;
+}
+
+export interface DeckSuggestResponse {
+  deck_hash: string;
+  filename: string;
+  slides: SlideSuggestion[];
+  deck_cached: boolean;
+  llm_batches: number;
+}
+
+export interface DeckForceResponse {
+  slide: SlideSuggestion;
+}
+
+export type SlideDecision = "accepted" | "dismissed";

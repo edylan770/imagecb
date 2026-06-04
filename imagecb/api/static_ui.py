@@ -41,6 +41,33 @@ def _react_bundle_label(static_dir: Path) -> str:
     return "React (frontend/dist)"
 
 
+def react_bundle_has_deck_route(static_dir: Path) -> bool:
+    """True if the mounted React bundle includes the /deck client route."""
+    assets = static_dir / "assets"
+    if not assets.is_dir():
+        return False
+    for path in assets.glob("*.js"):
+        try:
+            if "/deck" in path.read_text(encoding="utf-8", errors="ignore"):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def warn_if_deck_route_missing() -> str | None:
+    """Return a warning message when the React bundle lacks /deck, else None."""
+    static, kind = resolve_static_dir()
+    if kind != StaticUiKind.REACT or static is None:
+        return None
+    if react_bundle_has_deck_route(static):
+        return None
+    return (
+        "WARNING: UI bundle is missing the /deck route. "
+        "Run: cd frontend && npm run build && cd .. && python scripts/sync_frontend_dist.py"
+    )
+
+
 def format_serve_web_urls(*, host: str, port: int) -> list[str]:
     """Lines to print when starting serve-web."""
     static, kind = resolve_static_dir()
@@ -49,6 +76,7 @@ def format_serve_web_urls(*, host: str, port: int) -> list[str]:
     if kind == StaticUiKind.REACT and static is not None:
         lines.append(f"UI bundle: {_react_bundle_label(static)}")
         lines.append(f"Admin UI:  {base}/admin")
+        lines.append(f"Deck suggest: {base}/deck")
         return lines
     lines.append(
         "Admin UI:  not available (missing bundled React build in imagecb/web/frontend_dist)"

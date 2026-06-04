@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { AdminNavLink } from "./AdminNavLink";
 import { AtlasAcronymLine, AtlasWordmark } from "./AtlasBranding";
 
@@ -18,6 +19,12 @@ export function Header({ indexedCount, onOpenCorpus }: HeaderProps) {
           <AtlasAcronymLine />
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <Link
+            to="/deck"
+            className="rounded-lg border border-white/25 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-white/10"
+          >
+            Deck suggest
+          </Link>
           <AdminNavLink variant="headerDark" />
           <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-white ring-1 ring-white/20">
             {indexedCount} indexed

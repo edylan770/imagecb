@@ -10,37 +10,10 @@ from typing import Iterator, Optional
 
 from PIL import Image
 
+from .pptx_text import slide_notes, slide_title
 from .types import ExtractedImage, Provenance
 
 logger = logging.getLogger(__name__)
-
-
-def _slide_title(slide) -> Optional[str]:
-    title_shape = getattr(slide.shapes, "title", None)
-    if title_shape is not None and title_shape.has_text_frame:
-        text = (title_shape.text or "").strip()
-        if text:
-            return text
-    # Fall back to first text shape with content.
-    for shape in slide.shapes:
-        if shape.has_text_frame:
-            text = (shape.text_frame.text or "").strip()
-            if text:
-                first_line = text.splitlines()[0].strip()
-                if first_line:
-                    return first_line
-    return None
-
-
-def _slide_notes(slide) -> Optional[str]:
-    try:
-        if slide.has_notes_slide:
-            notes_text = slide.notes_slide.notes_text_frame.text or ""
-            notes_text = notes_text.strip()
-            return notes_text or None
-    except Exception:  # noqa: BLE001
-        return None
-    return None
 
 
 def _iter_picture_shapes(shapes):
@@ -75,8 +48,8 @@ def extract(path: Path) -> Iterator[ExtractedImage]:
         modified_at = datetime.fromtimestamp(path.stat().st_mtime)
 
     for slide_idx, slide in enumerate(prs.slides, start=1):
-        title = _slide_title(slide)
-        notes = _slide_notes(slide)
+        title = slide_title(slide)
+        notes = slide_notes(slide)
         for shape in _iter_picture_shapes(slide.shapes):
             try:
                 blob = shape.image.blob
