@@ -25,7 +25,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY imagecb/ ./imagecb/
 
-COPY --from=frontend /app/frontend/dist ./frontend/dist/
+COPY --from=frontend /app/frontend/dist ./imagecb/web/frontend_dist/
 
 ENV TESSERACT_CMD=/usr/bin/tesseract
 

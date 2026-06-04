@@ -5,12 +5,22 @@ interface ResultsGridProps {
   results: ResultCardType[];
   loading?: boolean;
   onFindSimilar?: (imageId: string, imageName: string) => void;
+  searchEventId?: string | null;
+  sessionId?: string | null;
+  topK?: number;
+  minMatchPercent?: number;
+  onSimilarResults?: (results: ResultCardType[], searchEventId?: string | null) => void;
 }
 
 export function ResultsGrid({
   results,
   loading = false,
   onFindSimilar,
+  searchEventId,
+  sessionId,
+  topK,
+  minMatchPercent,
+  onSimilarResults,
 }: ResultsGridProps) {
   if (results.length === 0) {
     return (
@@ -41,6 +51,11 @@ export function ResultsGrid({
           card={card}
           onFindSimilar={onFindSimilar}
           findSimilarDisabled={loading}
+          searchEventId={searchEventId}
+          sessionId={sessionId}
+          topK={topK}
+          minMatchPercent={minMatchPercent}
+          onSimilarResults={onSimilarResults}
         />
       ))}
     </div>

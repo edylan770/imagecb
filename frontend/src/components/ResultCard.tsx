@@ -1,9 +1,16 @@
+import { recordInteraction } from "../api/telemetry";
+import { sendSimilar } from "../api/client";
 import type { ResultCard as ResultCardType } from "../types";
 
 interface ResultCardProps {
   card: ResultCardType;
   onFindSimilar?: (imageId: string, imageName: string) => void;
   findSimilarDisabled?: boolean;
+  searchEventId?: string | null;
+  sessionId?: string | null;
+  topK?: number;
+  minMatchPercent?: number;
+  onSimilarResults?: (results: ResultCardType[], searchEventId?: string | null) => void;
 }
 
 export function ResultCard({
@@ -13,8 +20,44 @@ export function ResultCard({
 }: ResultCardProps) {
   const displayName =
     card.image_name || card.provenance.source_name || "this image";
+  searchEventId,
+  sessionId,
+  topK = 10,
+  minMatchPercent = 0,
+  onSimilarResults,
+}: ResultCardProps) {
+  const track = (type: "view" | "download" | "similar") => {
+    if (searchEventId) {
+      void recordInteraction(searchEventId, card.image_id, type, card.rank);
+    }
+  };
+
+  const handleView = () => track("view");
+
+  const handleDownload = (e: React.MouseEvent) => {
+    e.preventDefault();
+    track("download");
+    if (card.source_url) {
+      window.open(card.source_url, "_blank", "noopener");
+    }
+  };
+
+  const handleSimilar = async () => {
+    track("similar");
+    try {
+      const res = await sendSimilar(card.image_id, sessionId ?? null, topK, minMatchPercent);
+      onSimilarResults?.(res.results, res.search_event_id ?? null);
+    } catch {
+      /* parent may show error */
+    }
+  };
+
   return (
-    <article className="flex flex-col overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-navy-200 transition hover:shadow-lg hover:ring-brand-300">
+    <article
+      className="flex flex-col overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-navy-200 transition hover:shadow-lg hover:ring-brand-300"
+      onClick={handleView}
+      role="presentation"
+    >
       <div className="relative aspect-video bg-navy-50">
         {card.has_image_file ? (
           <img
@@ -97,6 +140,27 @@ export function ResultCard({
             Find similar images
           </button>
         )}
+        <div
+          className="mt-1 flex flex-wrap gap-2 border-t border-navy-100 pt-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {card.source_url && (
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="text-[10px] font-medium text-brand-600 hover:underline"
+            >
+              Open source
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleSimilar()}
+            className="text-[10px] font-medium text-brand-600 hover:underline"
+          >
+            Find similar
+          </button>
+        </div>
       </div>
     </article>
   );

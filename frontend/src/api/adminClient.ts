@@ -1,0 +1,132 @@
+const ADMIN_KEY_STORAGE = "imagecb.adminApiKey";
+
+export function getAdminApiKey(): string | null {
+  return (
+    sessionStorage.getItem(ADMIN_KEY_STORAGE) ||
+    import.meta.env.VITE_ADMIN_API_KEY ||
+    null
+  );
+}
+
+export function setAdminApiKey(key: string): void {
+  sessionStorage.setItem(ADMIN_KEY_STORAGE, key);
+}
+
+async function adminRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const key = getAdminApiKey();
+  if (!key) {
+    throw new Error("Admin API key not set");
+  }
+  const headers: Record<string, string> = {
+    "X-Admin-Api-Key": key,
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+  const res = await fetch(path, { ...init, headers });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = body.detail ?? detail;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(String(detail));
+  }
+  return res.json() as Promise<T>;
+}
+
+export interface AnalyticsSummary {
+  since: string;
+  total_searches: number;
+  zero_result_count: number;
+  weak_result_count: number;
+  no_interaction_count: number;
+  searches_with_results: number;
+  interaction_count: number;
+  interaction_rate: number;
+  zero_result_rate: number;
+  weak_result_rate: number;
+  no_interaction_rate: number;
+  weak_score_threshold: number;
+}
+
+export interface SearchQualityLists {
+  zero_result: SearchQualityItem[];
+  weak_result: SearchQualityItem[];
+  no_interaction: SearchQualityItem[];
+  weak_score_threshold: number;
+}
+
+export interface SearchQualityItem {
+  search_event_id: string;
+  created_at: string | null;
+  query_text: string;
+  user_message?: string;
+  display_query: string;
+  parsed_semantic_query?: string | null;
+  user_id: string;
+  result_count: number;
+  top_score: number | null;
+  top_score_kind: string | null;
+  category: string;
+}
+
+export interface CorpusImage {
+  image_id: string;
+  caption_short?: string | null;
+  source_file?: string;
+  source_type?: string;
+  author?: string | null;
+  image_url: string;
+}
+
+export function fetchAnalyticsSummary(days = 7): Promise<AnalyticsSummary> {
+  return adminRequest(`/api/admin/analytics/summary?days=${days}`);
+}
+
+export function fetchSearchQuality(limit = 50): Promise<SearchQualityLists> {
+  return adminRequest(`/api/admin/analytics/search-quality?limit=${limit}`);
+}
+
+export function fetchFunnel(searchEventId: string): Promise<unknown> {
+  return adminRequest(
+    `/api/admin/analytics/funnel?search_event_id=${encodeURIComponent(searchEventId)}`,
+  );
+}
+
+export function fetchAudit(limit = 100, offset = 0): Promise<{ entries: unknown[] }> {
+  return adminRequest(`/api/admin/audit?limit=${limit}&offset=${offset}`);
+}
+
+export function fetchCorpusImages(): Promise<{ images: CorpusImage[] }> {
+  return adminRequest("/api/admin/corpus/images");
+}
+
+export function fetchOrphans(neverInteracted = false): Promise<{ orphans: unknown[] }> {
+  return adminRequest(
+    `/api/admin/corpus/orphans?never_interacted=${neverInteracted}`,
+  );
+}
+
+export function fetchDeleted(): Promise<{ deleted: unknown[] }> {
+  return adminRequest("/api/admin/corpus/deleted");
+}
+
+export function fetchDuplicateClusters(): Promise<{
+  clusters: unknown[];
+  error?: string | null;
+}> {
+  return adminRequest("/api/admin/corpus/duplicate-clusters");
+}
+
+export function softDeleteImage(imageId: string): Promise<unknown> {
+  return adminRequest(`/api/admin/images/${imageId}/soft-delete`, {
+    method: "POST",
+  });
+}
+
+export function restoreImage(imageId: string): Promise<unknown> {
+  return adminRequest(`/api/admin/images/${imageId}/restore`, {
+    method: "POST",
+  });
+}

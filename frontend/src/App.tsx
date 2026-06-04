@@ -75,6 +75,7 @@ export default function App() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [searchHistory, setSearchHistory] = useState<SearchHistoryEntry[]>([]);
+  const [searchEventId, setSearchEventId] = useState<string | null>(null);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -263,6 +264,7 @@ export default function App() {
       const turn = activeConversation.turns.find((t) => t.id === turnId);
       if (!turn) return;
       setSelectedTurnId(turnId);
+      setSearchEventId(turn?.searchEventId ?? null);
       applyTurnToPanel(turn, setResults);
     },
     [activeConversation],
@@ -342,6 +344,7 @@ export default function App() {
     try {
       await sendChatStream(text, sessionId, effectiveTopK, effectiveMinMatchPercent, {
         onMetadata: (meta) => {
+          setSearchEventId(meta.search_event_id ?? null);
           updateConversations((prev) =>
             prev.map((c) => {
               if (c.id !== convId) return c;
@@ -355,6 +358,7 @@ export default function App() {
                         ...t,
                         results: meta.results,
                         parsedQuery: meta.parsed_query ?? null,
+                        searchEventId: meta.search_event_id ?? null,
                       }
                     : t,
                 ),
@@ -687,6 +691,14 @@ export default function App() {
             results={results}
             loading={loading}
             onFindSimilar={handleSimilarFromResult}
+            searchEventId={searchEventId}
+            sessionId={activeConversation?.sessionId ?? null}
+            topK={topK}
+            minMatchPercent={minMatchPercent}
+            onSimilarResults={(similarResults, newSearchEventId) => {
+              setResults(similarResults);
+              setSearchEventId(newSearchEventId ?? null);
+            }}
           />
         </section>
       </main>

@@ -9,9 +9,33 @@ const EXAMPLES = [
 
 const state = {
   sessionId: null,
+  searchEventId: null,
   messages: [],
   loading: false,
 };
+
+function userIdHeader() {
+  const uid = localStorage.getItem("imagecb.userId");
+  return uid ? { "X-User-Id": uid } : {};
+}
+
+async function recordInteraction(imageId, interactionType, rank) {
+  if (!state.searchEventId) return;
+  try {
+    await api("/api/telemetry/interaction", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...userIdHeader() },
+      body: JSON.stringify({
+        search_event_id: state.searchEventId,
+        image_id: imageId,
+        interaction_type: interactionType,
+        rank: rank ?? null,
+      }),
+    });
+  } catch {
+    /* non-fatal */
+  }
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -142,13 +166,13 @@ function resultCardActions(card) {
     ? `<span class="source-loc">${escapeHtml(card.source_location)}</span>`
     : "";
   const openSrc = card.source_url
-    ? `<a class="btn-link-sm" href="${escapeHtml(card.source_url)}" target="_blank" rel="noopener">Open source</a>`
+    ? `<a class="btn-link-sm btn-download" href="${escapeHtml(card.source_url)}" target="_blank" rel="noopener" data-image-id="${escapeHtml(card.image_id)}" data-rank="${card.rank}">Open source</a>`
     : "";
   const copyPath =
     card.source_path
       ? `<button type="button" class="btn-link-sm btn-copy-path" data-path="${escapeHtml(card.source_path)}">Copy path</button>`
       : "";
-  const similar = `<button type="button" class="btn-link-sm btn-similar" data-image-id="${escapeHtml(card.image_id)}">Find similar</button>`;
+  const similar = `<button type="button" class="btn-link-sm btn-similar" data-image-id="${escapeHtml(card.image_id)}" data-rank="${card.rank}">Find similar</button>`;
   return `<div class="result-actions">${loc}${openSrc}${copyPath}${similar}</div>`;
 }
 
@@ -168,7 +192,7 @@ function renderResults(results) {
         .map((c) => `<span class="chip-tag">${escapeHtml(c)}</span>`)
         .join("");
       const thumb = card.has_image_file
-        ? `<img src="${escapeHtml(card.image_url)}" alt="" loading="lazy" />`
+        ? `<img class="result-thumb-img" src="${escapeHtml(card.image_url)}" alt="" loading="lazy" data-image-id="${escapeHtml(card.image_id)}" data-rank="${card.rank}" />`
         : '<div class="no-img">Image unavailable</div>';
       const hint = card.match_hint
         ? `<p class="result-hint" title="${escapeHtml(card.match_hint)}">${escapeHtml(card.match_hint)}</p>`
@@ -190,8 +214,21 @@ function renderResults(results) {
     })
     .join("");
 
+  grid.querySelectorAll(".result-thumb-img").forEach((img) => {
+    img.addEventListener("click", () => {
+      recordInteraction(img.dataset.imageId, "view", Number(img.dataset.rank));
+    });
+  });
+  grid.querySelectorAll(".btn-download").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      recordInteraction(btn.dataset.imageId, "download", Number(btn.dataset.rank));
+    });
+  });
   grid.querySelectorAll(".btn-similar").forEach((btn) => {
-    btn.addEventListener("click", () => runSimilar({ imageId: btn.dataset.imageId }));
+    btn.addEventListener("click", () => {
+      recordInteraction(btn.dataset.imageId, "similar", Number(btn.dataset.rank));
+      runSimilar({ imageId: btn.dataset.imageId });
+    });
   });
   grid.querySelectorAll(".btn-copy-path").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -264,6 +301,7 @@ function renderParsedQuery(pq) {
 
 async function applySearchResponse(res, userLabel) {
   if (res.session_id) state.sessionId = res.session_id;
+  if (res.search_event_id) state.searchEventId = res.search_event_id;
   state.messages.push({ role: "assistant", content: res.assistant_message });
   renderMessages();
   renderResults(res.results);
@@ -410,7 +448,9 @@ async function runIngest() {
   status.classList.remove("hidden");
 
   try {
-    const res = await api("/api/ingest", { method: "POST", body: form });
+    const adminKey = sessionStorage.getItem("imagecb.adminApiKey");
+    const headers = adminKey ? { "X-Admin-Api-Key": adminKey } : {};
+    const res = await api("/api/ingest", { method: "POST", headers, body: form });
     status.textContent = res.message;
     $("indexed-badge").textContent = `${res.indexed_count} indexed`;
     $("footer-count").textContent = res.indexed_count;
