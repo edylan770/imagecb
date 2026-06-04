@@ -145,3 +145,36 @@ class IngestResponse(BaseModel):
     message: str
     indexed_count: int
     stats: dict = Field(default_factory=dict)
+
+
+class SlideSuggestionOut(BaseModel):
+    slide_index: int
+    title: Optional[str] = None
+    body_preview: str = ""
+    notes_preview: str = ""
+    content_hash: str = ""
+    status: str  # image_needed | no_image_needed
+    description: str = ""
+    reason: str = ""
+    results: List[ResultCardOut] = Field(default_factory=list)
+    llm_cached: bool = False
+    search_cached: bool = False
+
+
+class DeckSuggestResponse(BaseModel):
+    deck_hash: str
+    filename: str
+    slides: List[SlideSuggestionOut] = Field(default_factory=list)
+    deck_cached: bool = False
+    llm_batches: int = 0
+
+
+class DeckForceRequest(BaseModel):
+    deck_hash: str
+    slide_index: int = Field(ge=1)
+    top_k: int = Field(default=10, ge=1, le=30)
+    min_match_percent: int = Field(default=0, ge=0, le=100)
+
+
+class DeckForceResponse(BaseModel):
+    slide: SlideSuggestionOut
