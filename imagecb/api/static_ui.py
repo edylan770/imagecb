@@ -19,6 +19,9 @@ class StaticUiKind(str, Enum):
 
 def resolve_static_dir() -> tuple[Path | None, StaticUiKind]:
     """Return (directory, kind) for the best available UI bundle."""
+    cwd_dist = (Path.cwd() / "frontend" / "dist").resolve()
+    if cwd_dist.is_dir() and (cwd_dist / "index.html").is_file():
+        return cwd_dist, StaticUiKind.REACT
     if _SHIPPED_REACT.is_dir() and (_SHIPPED_REACT / "index.html").is_file():
         return _SHIPPED_REACT, StaticUiKind.REACT
     if _FRONTEND_DIST.is_dir() and (_FRONTEND_DIST / "index.html").is_file():

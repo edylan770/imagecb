@@ -75,7 +75,7 @@ export function CorpusDrawer({
       />
       <aside className="fixed right-0 top-0 z-50 flex h-full w-full max-w-lg flex-col bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-navy-200 bg-navy-50 px-5 py-4">
-          <h2 className="text-lg font-semibold text-navy-900">Add to ATLAS corpus</h2>
+          <h2 className="text-lg font-semibold text-navy-900">Add to Database</h2>
           <button
             type="button"
             onClick={onClose}

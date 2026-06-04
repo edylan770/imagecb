@@ -57,11 +57,11 @@ export function ResultCard({
 
   return (
     <article
-      className="flex flex-col overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-navy-200 transition hover:shadow-lg hover:ring-brand-300"
+      className="flex flex-col overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-navy-200 transition hover:shadow-md hover:ring-brand-300"
       onClick={handleView}
       role="presentation"
     >
-      <div className="relative aspect-video bg-navy-50">
+      <div className="relative h-28 bg-navy-50 sm:h-32">
         {card.has_image_file ? (
           <img
             src={card.image_url}
@@ -70,42 +70,42 @@ export function ResultCard({
             loading="lazy"
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-xs text-navy-500">
+          <div className="flex h-full items-center justify-center text-[10px] text-navy-500">
             Image unavailable
           </div>
         )}
-        <span className="absolute left-2 top-2 rounded-md bg-navy-900/90 px-2 py-0.5 text-xs font-medium text-white">
+        <span className="absolute left-1.5 top-1.5 rounded bg-navy-900/90 px-1.5 py-px text-[10px] font-medium text-white">
           #{card.rank}
         </span>
         <span
-          className="absolute right-2 top-2 rounded-md bg-brand-500 px-2 py-0.5 text-xs font-semibold text-white"
+          className="absolute right-1.5 top-1.5 rounded bg-brand-500 px-1.5 py-px text-[10px] font-semibold text-white"
           title="Calibrated relevance (display only); ranking uses raw model scores"
         >
           {card.match_percent}%
         </span>
       </div>
-      <div className="flex flex-1 flex-col gap-2 p-3">
+      <div className="flex flex-1 flex-col gap-1 p-2">
         {card.image_name && (
-          <p className="text-sm font-semibold leading-tight text-navy-900">
+          <p className="line-clamp-1 text-xs font-semibold leading-tight text-navy-900">
             {card.image_name}
           </p>
         )}
-        <div className="flex flex-wrap gap-1">
-          {card.provenance.chips.map((chip) => (
+        <div className="flex flex-wrap gap-0.5">
+          {card.provenance.chips.slice(0, 3).map((chip) => (
             <span
               key={chip}
-              className="rounded-md bg-navy-100 px-2 py-0.5 text-[10px] font-medium text-navy-700"
+              className="rounded bg-navy-100 px-1.5 py-px text-[9px] font-medium text-navy-700"
             >
               {chip}
             </span>
           ))}
         </div>
         {card.tags && card.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {card.tags.slice(0, 6).map((tag) => (
+          <div className="flex flex-wrap gap-0.5">
+            {card.tags.slice(0, 4).map((tag) => (
               <span
                 key={tag}
-                className="rounded-md bg-brand-50 px-1.5 py-0.5 text-[10px] text-brand-800"
+                className="rounded bg-brand-50 px-1 py-px text-[9px] text-brand-800"
               >
                 {tag}
               </span>
@@ -113,21 +113,21 @@ export function ResultCard({
           </div>
         )}
         {card.use_case && (
-          <p className="text-[10px] italic text-navy-600">{card.use_case}</p>
+          <p className="line-clamp-1 text-[9px] italic text-navy-600">{card.use_case}</p>
         )}
         {card.caption && (
-          <p className="line-clamp-3 text-xs leading-snug text-navy-800">
+          <p className="line-clamp-2 text-[10px] leading-snug text-navy-800">
             {card.caption}
           </p>
         )}
         {card.recommended_cases && card.recommended_cases.length > 0 && (
-          <p className="text-[10px] text-navy-500" title={card.recommended_cases.join("\n")}>
+          <p className="line-clamp-1 text-[9px] text-navy-500" title={card.recommended_cases.join("\n")}>
             Try: {card.recommended_cases[0]}
           </p>
         )}
         {card.match_hint && (
           <p
-            className="mt-auto text-[10px] text-navy-500"
+            className="line-clamp-1 text-[9px] text-navy-500"
             title={card.match_hint}
           >
             {card.match_hint}
@@ -138,21 +138,21 @@ export function ResultCard({
             type="button"
             disabled={findSimilarDisabled}
             onClick={() => onFindSimilar!(card.image_id, displayName)}
-            className="mt-1 w-full rounded-lg border border-brand-200 bg-brand-50 py-1.5 text-xs font-medium text-brand-800 transition hover:bg-brand-100 disabled:opacity-50"
+            className="mt-0.5 w-full rounded border border-brand-200 bg-brand-50 py-1 text-[10px] font-medium text-brand-800 transition hover:bg-brand-100 disabled:opacity-50"
           >
-            Find similar images
+            Find similar
           </button>
         )}
         {(card.source_url || showInlineSimilar) && (
           <div
-            className="mt-1 flex flex-wrap gap-2 border-t border-navy-100 pt-2"
+            className="mt-0.5 flex flex-wrap gap-2 border-t border-navy-100 pt-1"
             onClick={(e) => e.stopPropagation()}
           >
             {card.source_url && (
               <button
                 type="button"
                 onClick={handleDownload}
-                className="text-[10px] font-medium text-brand-600 hover:underline"
+                className="text-[9px] font-medium text-brand-600 hover:underline"
               >
                 Open source
               </button>
@@ -161,9 +161,9 @@ export function ResultCard({
               <button
                 type="button"
                 onClick={() => void handleSimilar()}
-                className="text-[10px] font-medium text-brand-600 hover:underline"
+                className="text-[9px] font-medium text-brand-600 hover:underline"
               >
-                Find similar
+                Similar
               </button>
             )}
           </div>
