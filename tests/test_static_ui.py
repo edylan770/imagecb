@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from imagecb.api.static_ui import StaticUiKind, resolve_static_dir
+from imagecb.api.static_ui import StaticUiKind, react_bundle_has_deck_route, resolve_static_dir
 
 
 def test_resolve_static_prefers_shipped_frontend_dist():
@@ -22,3 +22,11 @@ def test_shipped_frontend_dist_is_atlas_bundle():
     assert index.is_file()
     html = index.read_text(encoding="utf-8")
     assert "ATLAS" in html.upper()
+
+
+def test_shipped_frontend_dist_includes_deck_route():
+    shipped = Path(__file__).resolve().parents[1] / "imagecb" / "web" / "frontend_dist"
+    assert react_bundle_has_deck_route(shipped), (
+        "Shipped bundle missing /deck. Run: cd frontend && npm run build && "
+        "python scripts/sync_frontend_dist.py"
+    )

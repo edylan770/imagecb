@@ -280,6 +280,7 @@ Startup should print `UI bundle: ATLAS (React, imagecb/web/frontend_dist)`.
 Then open:
 
 - Chat: http://127.0.0.1:8080/ (hard refresh once if you still see the old UI: Ctrl+Shift+R)
+- Deck suggest: http://127.0.0.1:8080/deck (also via the slide icon beside **Send** in the composer)
 - Admin: http://127.0.0.1:8080/admin (enter `ADMIN_API_KEY` from `.env`)
 
 If the page still shows the legacy **Imagecb** (light gray) UI, your clone’s
@@ -315,11 +316,41 @@ ingest. Optional checkboxes mirror CLI flags: skip captions, skip OCR,
 and force re-ingest. Large decks can take several minutes (~2 Bedrock
 calls per extracted image).
 
+#### Deck suggest (slide-aware image suggestions)
+
+Open **Deck suggest** from the header (or http://127.0.0.1:8080/deck).
+Upload a content-filled `.pptx` deck. The system:
+
+1. Extracts each slide's title, body text, and speaker notes.
+2. Batches slides through the same LLM as chat (`LLM_MODEL`) to produce
+   grounded, caption-style search descriptions (or `no_image_needed` for
+   tables, agendas, and text-only slides).
+3. Runs each description through the normal hybrid search + Cohere rerank
+   pipeline against the indexed corpus.
+4. Shows a per-slide gallery with the generated description visible for
+   debugging, plus **Accept** / **Dismiss** and **Force image** when the
+   model skipped a slide.
+
+Processed decks are cached on disk by content hash (`data/deck_cache/` by
+default). Re-uploading an unchanged or lightly edited deck reuses per-slide
+LLM and search results where slide text matches.
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `DECK_CACHE_DIR` | `{DATA_DIR}/deck_cache` | Disk cache for LLM + search |
+| `DECK_LLM_BATCH_SIZE` | `10` | Slides per LLM request |
+| `DECK_MAX_SLIDES` | `200` | Maximum slides per upload |
+| `DECK_MAX_CHARS_PER_SLIDE` | `6000` | Truncate text sent to the LLM |
+| `DECK_MAX_UPLOAD_BYTES` | `52428800` (50 MB) | Max upload size |
+| `DECK_CACHE_ENABLED` | `true` | Toggle disk cache |
+
+API: `POST /api/deck/suggest` (multipart `.pptx`), `POST /api/deck/force` (JSON).
+
 #### Search features in the web UI
 
 - **Find similar** on any result card runs visual similarity search (no
   query LLM).
-- **Attach** in the composer uploads a reference image for similarity
+- **Camera** in the composer uploads a reference image for similarity
   search.
 - **Open source** downloads the original `.pptx`, `.pdf`, or image file;
   **Copy path** puts the on-disk path on the clipboard (use with slide/page

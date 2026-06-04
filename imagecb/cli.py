@@ -86,10 +86,13 @@ def serve_web(
     """Launch the FastAPI web UI (no npm required)."""
     _configure_logging(verbose)
     from imagecb.api.server import launch
-    from imagecb.api.static_ui import format_serve_web_urls
+    from imagecb.api.static_ui import format_serve_web_urls, warn_if_deck_route_missing
 
     for line in format_serve_web_urls(host=host, port=port):
         typer.echo(line)
+    deck_warn = warn_if_deck_route_missing()
+    if deck_warn:
+        typer.echo(deck_warn, err=True)
     launch(host=host, port=port)
 
 
