@@ -1,7 +1,5 @@
 import { useRef, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
-import type { SearchHistoryEntry } from "../types";
-import { SearchHistoryChips } from "./SearchHistoryChips";
 
 const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff";
 
@@ -30,13 +28,10 @@ interface ComposerProps {
   topK: number;
   minMatchPercent: number;
   loading: boolean;
-  searchHistory: SearchHistoryEntry[];
   onChange: (value: string) => void;
   onTopKChange: (value: number) => void;
   onMinMatchPercentChange: (value: number) => void;
   onSend: () => void;
-  onRerunSearch: (entry: SearchHistoryEntry) => void;
-  onClearSearchHistory: () => void;
   onSimilarImageSearch: (file: File) => void;
 }
 
@@ -69,13 +64,10 @@ export function Composer({
   topK,
   minMatchPercent,
   loading,
-  searchHistory,
   onChange,
   onTopKChange,
   onMinMatchPercentChange,
   onSend,
-  onRerunSearch,
-  onClearSearchHistory,
   onSimilarImageSearch,
 }: ComposerProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -168,13 +160,6 @@ export function Composer({
           <span className="w-8 font-medium text-navy-800">{minMatchPercent}</span>
         </label>
       </div>
-      <SearchHistoryChips
-        history={searchHistory}
-        onSelect={onRerunSearch}
-        onClear={onClearSearchHistory}
-        maxItems={4}
-        className="mt-2 border-t border-navy-100 pt-2"
-      />
     </div>
   );
 }

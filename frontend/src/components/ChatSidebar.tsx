@@ -78,7 +78,6 @@ export function ChatSidebar({
         >
           +
         </button>
-        <AdminNavLink variant="sidebarCollapsed" />
       </div>
     );
   }
