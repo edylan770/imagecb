@@ -1,3 +1,4 @@
+import tistaLogoUrl from "../assets/tista-logo.png";
 import { Link } from "react-router-dom";
 import { AdminNavLink } from "./AdminNavLink";
 import { AtlasAcronymLine, AtlasWordmark } from "./AtlasBranding";
@@ -13,9 +14,6 @@ export function Header({ indexedCount, onOpenCorpus }: HeaderProps) {
       <div className="flex items-center justify-between gap-4 px-5 py-2.5">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
           <AtlasWordmark />
-          <span className="hidden text-[10px] font-medium uppercase tracking-widest text-white/45 sm:inline">
-            Tista
-          </span>
           <AtlasAcronymLine />
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -34,8 +32,13 @@ export function Header({ indexedCount, onOpenCorpus }: HeaderProps) {
             onClick={onOpenCorpus}
             className="rounded-lg bg-brand-500 px-3.5 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-400"
           >
-            Add to corpus
+            Add to Database
           </button>
+          <img
+            src={tistaLogoUrl}
+            alt="Tista — science and technology corporation"
+            className="h-9 w-auto max-w-[160px] rounded bg-white px-2 py-0.5 object-contain object-right"
+          />
         </div>
       </div>
     </header>
