@@ -4,6 +4,8 @@ import type { ResultCard as ResultCardType } from "../types";
 
 interface ResultCardProps {
   card: ResultCardType;
+  onFindSimilar?: (imageId: string, imageName: string) => void;
+  findSimilarDisabled?: boolean;
   searchEventId?: string | null;
   sessionId?: string | null;
   topK?: number;
@@ -13,6 +15,11 @@ interface ResultCardProps {
 
 export function ResultCard({
   card,
+  onFindSimilar,
+  findSimilarDisabled = false,
+}: ResultCardProps) {
+  const displayName =
+    card.image_name || card.provenance.source_name || "this image";
   searchEventId,
   sessionId,
   topK = 10,
@@ -122,6 +129,16 @@ export function ResultCard({
           >
             {card.match_hint}
           </p>
+        )}
+        {onFindSimilar && card.has_image_file && (
+          <button
+            type="button"
+            disabled={findSimilarDisabled}
+            onClick={() => onFindSimilar(card.image_id, displayName)}
+            className="mt-1 w-full rounded-lg border border-brand-200 bg-brand-50 py-1.5 text-xs font-medium text-brand-800 transition hover:bg-brand-100 disabled:opacity-50"
+          >
+            Find similar images
+          </button>
         )}
         <div
           className="mt-1 flex flex-wrap gap-2 border-t border-navy-100 pt-2"
