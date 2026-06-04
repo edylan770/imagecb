@@ -1,6 +1,3 @@
-import type { SearchHistoryEntry } from "../types";
-import { SearchHistoryChips } from "./SearchHistoryChips";
-
 const FALLBACK_SUGGESTIONS = [
   "Screenshots of dashboards from Q3_Review.pptx",
   "Charts showing revenue growth",
@@ -11,19 +8,13 @@ const FALLBACK_SUGGESTIONS = [
 interface EmptyStateProps {
   suggestions: string[];
   loading: boolean;
-  searchHistory: SearchHistoryEntry[];
   onPickExample: (text: string) => void;
-  onRerunSearch: (entry: SearchHistoryEntry) => void;
-  onClearSearchHistory: () => void;
 }
 
 export function EmptyState({
   suggestions,
   loading,
-  searchHistory,
   onPickExample,
-  onRerunSearch,
-  onClearSearchHistory,
 }: EmptyStateProps) {
   const chips =
     !loading && suggestions.length > 0 ? suggestions : FALLBACK_SUGGESTIONS;
@@ -53,15 +44,6 @@ export function EmptyState({
         Describe what you are looking for in plain language. Refine across turns
         — results appear on the right.
       </p>
-      {searchHistory.length > 0 && (
-        <SearchHistoryChips
-          history={searchHistory}
-          onSelect={onRerunSearch}
-          onClear={onClearSearchHistory}
-          maxItems={8}
-          className="mt-6 w-full max-w-lg text-left"
-        />
-      )}
       <div className="mt-6 flex flex-wrap justify-center gap-2">
         {showSkeleton
           ? Array.from({ length: 4 }, (_, i) => (

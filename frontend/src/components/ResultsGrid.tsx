@@ -44,7 +44,7 @@ export function ResultsGrid({
   }
 
   return (
-    <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-6 overflow-y-auto p-6 2xl:grid-cols-2">
+    <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-3 overflow-y-auto p-3">
       {results.map((card) => (
         <ResultCard
           key={card.image_id}

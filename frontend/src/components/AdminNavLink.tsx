@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { getAdminApiKey } from "../api/adminClient";
 
-type Variant = "header" | "headerDark" | "sidebar" | "sidebarCollapsed";
+type Variant = "header" | "headerDark" | "sidebar" | "sidebarCollapsed" | "footer";
 
 interface AdminNavLinkProps {
   variant: Variant;
@@ -30,6 +30,21 @@ export function AdminNavLink({ variant }: AdminNavLinkProps) {
   const title = hasKey
     ? "Open ATLAS admin dashboard"
     : "Sign in with admin API key";
+
+  if (variant === "footer") {
+    return (
+      <Link
+        to="/admin"
+        title={title}
+        className={`inline-flex items-center gap-1.5 transition hover:underline ${
+          hasKey ? "text-brand-300" : "text-white/60 hover:text-white/80"
+        }`}
+      >
+        <LockIcon className="h-3.5 w-3.5 shrink-0" />
+        {label}
+      </Link>
+    );
+  }
 
   if (variant === "headerDark") {
     return (

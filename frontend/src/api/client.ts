@@ -329,23 +329,6 @@ export async function searchSimilarByImageId(
   topK: number,
   minMatchPercent: number,
 ): Promise<SimilarResponse> {
-  const form = new FormData();
-  form.append("image_id", imageId);
-  form.append("top_k", String(topK));
-  form.append("min_match_percent", String(minMatchPercent));
-  if (sessionId) form.append("session_id", sessionId);
-  return request<SimilarResponse>("/api/similar", {
-    method: "POST",
-    body: form,
-  });
-}
-
-export async function sendSimilar(
-  imageId: string,
-  sessionId: string | null,
-  topK: number,
-  minMatchPercent: number,
-): Promise<SimilarResponse> {
   return request<SimilarResponse>("/api/similar", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -356,4 +339,13 @@ export async function sendSimilar(
       min_match_percent: minMatchPercent,
     }),
   });
+}
+
+export async function sendSimilar(
+  imageId: string,
+  sessionId: string | null,
+  topK: number,
+  minMatchPercent: number,
+): Promise<SimilarResponse> {
+  return searchSimilarByImageId(imageId, sessionId, topK, minMatchPercent);
 }
