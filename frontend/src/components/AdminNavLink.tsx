@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { getAdminApiKey } from "../api/adminClient";
 
-type Variant = "sidebar";
+type Variant = "header" | "headerDark" | "sidebar" | "sidebarCollapsed" | "footer";
 
 interface AdminNavLinkProps {
   variant: Variant;
@@ -31,6 +31,51 @@ export function AdminNavLink({ variant }: AdminNavLinkProps) {
     ? "Open ATLAS admin dashboard"
     : "Sign in with admin API key";
 
+  if (variant === "footer") {
+    return (
+      <Link
+        to="/admin"
+        title={title}
+        className={`inline-flex items-center gap-1.5 transition hover:underline ${
+          hasKey ? "text-brand-300" : "text-white/60 hover:text-white/80"
+        }`}
+      >
+        <LockIcon className="h-3.5 w-3.5 shrink-0" />
+        {label}
+      </Link>
+    );
+  }
+
+  if (variant === "headerDark") {
+    return (
+      <Link
+        to="/admin"
+        title={title}
+        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+          hasKey
+            ? "text-white/90 ring-1 ring-white/25 hover:bg-white/10"
+            : "text-white/80 ring-1 ring-white/20 hover:bg-white/10 hover:text-white"
+        }`}
+      >
+        <LockIcon className="h-4 w-4 shrink-0" />
+        {label}
+      </Link>
+    );
+  }
+
+  if (variant === "sidebarCollapsed") {
+    return (
+      <Link
+        to="/admin"
+        title={title}
+        className="mt-2 flex rounded-lg p-2 text-navy-500 ring-1 ring-transparent transition hover:bg-navy-200 hover:text-brand-600 hover:ring-navy-200"
+        aria-label={label}
+      >
+        <LockIcon className="h-5 w-5" />
+      </Link>
+    );
+  }
+
   if (variant === "sidebar") {
     return (
       <Link
@@ -44,5 +89,18 @@ export function AdminNavLink({ variant }: AdminNavLinkProps) {
     );
   }
 
-  return null;
+  return (
+    <Link
+      to="/admin"
+      title={title}
+      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+        hasKey
+          ? "text-navy-700 ring-1 ring-navy-200 hover:bg-navy-50 hover:text-brand-600"
+          : "text-navy-600 ring-1 ring-navy-200 hover:bg-brand-50 hover:text-brand-700 hover:ring-brand-200"
+      }`}
+    >
+      <LockIcon className="h-4 w-4 shrink-0" />
+      {label}
+    </Link>
+  );
 }

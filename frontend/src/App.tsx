@@ -23,6 +23,7 @@ import { ChatSidebar } from "./components/ChatSidebar";
 import { Composer } from "./components/Composer";
 import { CorpusDrawer } from "./components/CorpusDrawer";
 import { EmptyState } from "./components/EmptyState";
+import { AdminNavLink } from "./components/AdminNavLink";
 import { Header } from "./components/Header";
 import { ResultsGrid } from "./components/ResultsGrid";
 import type {
@@ -286,7 +287,6 @@ export default function App() {
     setError(null);
     setLoading(true);
     setInput("");
-
     const turnId = newTurnId();
     const sessionId = conv.sessionId;
 
@@ -660,10 +660,13 @@ export default function App() {
         </section>
       </main>
 
-      <footer className="shrink-0 border-t border-navy-800 bg-navy-950 px-5 py-1 text-[11px] text-white/50">
-        <span className="font-semibold text-white/80">ATLAS</span>
-        {" · "}
-        {indexedCount} indexed images
+      <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-navy-800 bg-navy-950 px-5 py-1.5 text-[11px] text-white/50">
+        <span>
+          <span className="font-semibold text-white/80">ATLAS</span>
+          {" · "}
+          {indexedCount} indexed images
+        </span>
+        <AdminNavLink variant="footer" />
       </footer>
 
       <CorpusDrawer

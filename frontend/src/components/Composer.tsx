@@ -140,12 +140,12 @@ export function Composer({
           <input
             type="range"
             min={1}
-            max={30}
+            max={50}
             value={topK}
             onChange={(e) => onTopKChange(Number(e.target.value))}
             className="accent-brand-600"
           />
-          <span className="w-6 font-medium text-navy-800">{topK}</span>
+          <span className="w-7 font-medium text-navy-800">{topK}</span>
         </label>
         <label className="flex items-center gap-2 text-xs text-navy-600">
           <span>Min match %</span>

@@ -2,7 +2,6 @@ import { useMemo, useState, type ReactNode } from "react";
 import { searchConversations } from "../chat/search";
 import type { Conversation } from "../types";
 import { AdminNavLink } from "./AdminNavLink";
-
 interface ChatSidebarProps {
   conversations: Conversation[];
   activeId: string | null;
