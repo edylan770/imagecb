@@ -4,6 +4,8 @@ import {
   fetchStatus,
   fetchSuggestions,
   ingestFilesBatched,
+  searchSimilarByImage,
+  searchSimilarByImageId,
   sendChatStream,
 } from "./api/client";
 import {
@@ -425,6 +427,117 @@ export default function App() {
     }
   };
 
+  const applySimilarResponse = async (
+    userLabel: string,
+    fetchSimilar: (sessionId: string | null) => ReturnType<typeof searchSimilarByImage>,
+  ) => {
+    let convId = activeConversationId;
+    let conv = activeConversation;
+    if (!conv || !convId) {
+      const c = createConversation();
+      conv = c;
+      convId = c.id;
+      setConversations((prev) => {
+        const next = [c, ...prev];
+        persistSoon(next, c.id);
+        return next;
+      });
+      setActiveConversationId(c.id);
+    }
+
+    setError(null);
+    setLoading(true);
+
+    const turnId = newTurnId();
+    const sessionId = conv.sessionId;
+
+    const pendingTurn: ConversationTurn = {
+      id: turnId,
+      userContent: userLabel,
+      assistantContent: "",
+      results: [],
+      parsedQuery: null,
+    };
+    updateConversations((prev) =>
+      prev.map((c) => {
+        if (c.id !== convId) return c;
+        const title =
+          c.turns.length === 0 ? titleFromMessage(userLabel) : c.title;
+        return {
+          ...c,
+          title,
+          updatedAt: Date.now(),
+          turns: [...c.turns, pendingTurn],
+        };
+      }),
+    );
+    setSelectedTurnId(turnId);
+
+    try {
+      const res = await fetchSimilar(sessionId);
+      updateConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== convId) return c;
+          return {
+            ...c,
+            sessionId: res.session_id ?? c.sessionId,
+            updatedAt: Date.now(),
+            turns: c.turns.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    assistantContent: res.assistant_message,
+                    results: res.results,
+                    parsedQuery: res.parsed_query ?? null,
+                  }
+                : t,
+            ),
+          };
+        }),
+      );
+      setResults(res.results);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      updateConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== convId) return c;
+          return {
+            ...c,
+            updatedAt: Date.now(),
+            turns: c.turns.map((t) =>
+              t.id === turnId
+                ? {
+                    ...t,
+                    assistantContent: `**Error:** ${msg}`,
+                    results: [],
+                    parsedQuery: null,
+                  }
+                : t,
+            ),
+          };
+        }),
+      );
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSimilarImageSearch = (file: File) => {
+    if (loading) return;
+    void applySimilarResponse(`[Image search] ${file.name}`, (sessionId) =>
+      searchSimilarByImage(file, sessionId, topK, minMatchPercent),
+    );
+  };
+
+  const handleSimilarFromResult = (imageId: string, imageName: string) => {
+    if (loading) return;
+    void applySimilarResponse(`[Find similar] ${imageName}`, (sessionId) =>
+      searchSimilarByImageId(imageId, sessionId, topK, minMatchPercent),
+    );
+  };
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text || loading) return;
@@ -552,6 +665,7 @@ export default function App() {
                 onSend={handleSend}
                 onRerunSearch={handleRerunSearch}
                 onClearSearchHistory={handleClearSearchHistory}
+                onSimilarImageSearch={handleSimilarImageSearch}
               />
             </section>
           </div>
@@ -569,7 +683,11 @@ export default function App() {
               </span>
             )}
           </div>
-          <ResultsGrid results={results} />
+          <ResultsGrid
+            results={results}
+            loading={loading}
+            onFindSimilar={handleSimilarFromResult}
+          />
         </section>
       </main>
 
