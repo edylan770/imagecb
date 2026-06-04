@@ -1,8 +1,29 @@
 import { useRef, type KeyboardEvent } from "react";
+import { Link } from "react-router-dom";
 import type { SearchHistoryEntry } from "../types";
 import { SearchHistoryChips } from "./SearchHistoryChips";
 
 const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff";
+
+function DeckSuggestIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-5 w-5"
+      aria-hidden
+    >
+      <rect x="3" y="4" width="18" height="12" rx="1" />
+      <path d="M7 8h10M7 12h6" />
+      <path d="M8 20h8" />
+    </svg>
+  );
+}
 
 interface ComposerProps {
   value: string;
@@ -89,6 +110,14 @@ export function Composer({
           >
             <CameraIcon />
           </button>
+          <Link
+            to="/deck"
+            title="Deck suggest"
+            aria-label="Open deck suggest"
+            className="rounded-xl border border-navy-200 p-2.5 text-navy-600 transition hover:border-brand-400 hover:bg-brand-50 hover:text-brand-600"
+          >
+            <DeckSuggestIcon />
+          </Link>
           <button
             type="button"
             onClick={onSend}

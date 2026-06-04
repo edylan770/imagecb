@@ -19,6 +19,9 @@ from imagecb.api.schemas import (
     ChatRequest,
     ChatResponse,
     CorpusCatalogResponse,
+    DeckForceRequest,
+    DeckForceResponse,
+    DeckSuggestResponse,
     HealthResponse,
     IngestResponse,
     InteractionRequest,
@@ -29,6 +32,7 @@ from imagecb.api.schemas import (
     SessionResetResponse,
     SimilarRequest,
     SimilarResponse,
+    SlideSuggestionOut,
     StatusResponse,
     SuggestionsRequest,
     SuggestionsResponse,
@@ -47,6 +51,7 @@ from imagecb.formatting.conversational_reply import (
     build_conversational_reply,
     iter_conversational_reply_text,
 )
+from imagecb.deck.pipeline import DeckSuggestResult, SlideSuggestion, force_slide_image, process_deck_upload
 from imagecb.ingest import ingest_paths
 from imagecb.paths import resolve_image_file, resolve_source_file
 from imagecb.retrieval.query_parser import QuerySpec
@@ -71,6 +76,61 @@ _SOURCE_MEDIA = {
     ".tif": "image/tiff",
     ".tiff": "image/tiff",
 }
+
+
+def _result_card_from_dict(d: dict) -> ResultCardOut:
+    prov = d.get("provenance") or {}
+    return ResultCardOut(
+        rank=int(d.get("rank", 0)),
+        image_id=str(d.get("image_id", "")),
+        image_url=str(d.get("image_url", "")),
+        provenance=ProvenanceOut(
+            source_name=str(prov.get("source_name", "")),
+            source_type=str(prov.get("source_type", "")),
+            slide_index=prov.get("slide_index"),
+            page_index=prov.get("page_index"),
+            modified=prov.get("modified"),
+            author=prov.get("author"),
+            chips=list(prov.get("chips") or []),
+        ),
+        caption=str(d.get("caption", "")),
+        match_hint=d.get("match_hint"),
+        match_percent=int(d.get("match_percent", 0)),
+        has_image_file=bool(d.get("has_image_file", True)),
+        image_name=str(d.get("image_name", "")),
+        use_case=str(d.get("use_case", "")),
+        tags=list(d.get("tags") or []),
+        recommended_cases=list(d.get("recommended_cases") or []),
+        source_url=d.get("source_url"),
+        source_location=str(d.get("source_location", "")),
+        source_path=d.get("source_path"),
+    )
+
+
+def _slide_suggestion_out(s: SlideSuggestion) -> SlideSuggestionOut:
+    return SlideSuggestionOut(
+        slide_index=s.slide_index,
+        title=s.title,
+        body_preview=s.body_preview,
+        notes_preview=s.notes_preview,
+        content_hash=s.content_hash,
+        status=s.status,
+        description=s.description,
+        reason=s.reason,
+        results=[_result_card_from_dict(r) for r in s.results],
+        llm_cached=s.llm_cached,
+        search_cached=s.search_cached,
+    )
+
+
+def _deck_suggest_response(result: DeckSuggestResult) -> DeckSuggestResponse:
+    return DeckSuggestResponse(
+        deck_hash=result.deck_hash,
+        filename=result.filename,
+        slides=[_slide_suggestion_out(s) for s in result.slides],
+        deck_cached=result.deck_cached,
+        llm_batches=result.llm_batches,
+    )
 
 
 def _result_card_out(card) -> ResultCardOut:
@@ -527,3 +587,64 @@ async def ingest(
     except Exception:  # noqa: BLE001
         n = 0
     return IngestResponse(message="\n".join(lines), indexed_count=n, stats=stats)
+
+
+@router.post("/deck/suggest", response_model=DeckSuggestResponse)
+async def deck_suggest(
+    file: UploadFile = File(...),
+    top_k: int = Form(10),
+    min_match_percent: int = Form(0),
+    user_id: str = Depends(resolve_user_id),  # noqa: ARG001
+) -> DeckSuggestResponse:
+    """Suggest corpus images per slide from an uploaded PowerPoint deck."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="file is required")
+    if not file.filename.lower().endswith(".pptx"):
+        raise HTTPException(status_code=400, detail="only .pptx files are supported")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="empty file")
+
+    k = max(1, min(int(top_k), 30))
+    min_pct = max(0, min(int(min_match_percent), 100))
+
+    try:
+        result = process_deck_upload(
+            raw,
+            file.filename,
+            top_k=k,
+            min_match_percent=min_pct,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Deck suggest failed")
+        raise HTTPException(status_code=500, detail=f"Deck suggest failed: {exc}") from exc
+
+    return _deck_suggest_response(result)
+
+
+@router.post("/deck/force", response_model=DeckForceResponse)
+def deck_force(
+    body: DeckForceRequest,
+    user_id: str = Depends(resolve_user_id),  # noqa: ARG001
+) -> DeckForceResponse:
+    """Force image suggestion for a slide marked no_image_needed."""
+    k = max(1, min(int(body.top_k), 30))
+    min_pct = max(0, min(int(body.min_match_percent), 100))
+
+    try:
+        slide = force_slide_image(
+            body.deck_hash,
+            body.slide_index,
+            top_k=k,
+            min_match_percent=min_pct,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Deck force failed")
+        raise HTTPException(status_code=500, detail=f"Deck force failed: {exc}") from exc
+
+    return DeckForceResponse(slide=_slide_suggestion_out(slide))

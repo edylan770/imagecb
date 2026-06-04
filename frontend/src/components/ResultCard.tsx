@@ -17,15 +17,15 @@ export function ResultCard({
   card,
   onFindSimilar,
   findSimilarDisabled = false,
-}: ResultCardProps) {
-  const displayName =
-    card.image_name || card.provenance.source_name || "this image";
   searchEventId,
   sessionId,
   topK = 10,
   minMatchPercent = 0,
   onSimilarResults,
 }: ResultCardProps) {
+  const displayName =
+    card.image_name || card.provenance.source_name || "this image";
+
   const track = (type: "view" | "download" | "similar") => {
     if (searchEventId) {
       void recordInteraction(searchEventId, card.image_id, type, card.rank);
@@ -51,6 +51,9 @@ export function ResultCard({
       /* parent may show error */
     }
   };
+
+  const showPrimarySimilar = Boolean(onFindSimilar && card.has_image_file);
+  const showInlineSimilar = Boolean(onSimilarResults && !onFindSimilar);
 
   return (
     <article
@@ -130,37 +133,41 @@ export function ResultCard({
             {card.match_hint}
           </p>
         )}
-        {onFindSimilar && card.has_image_file && (
+        {showPrimarySimilar && (
           <button
             type="button"
             disabled={findSimilarDisabled}
-            onClick={() => onFindSimilar(card.image_id, displayName)}
+            onClick={() => onFindSimilar!(card.image_id, displayName)}
             className="mt-1 w-full rounded-lg border border-brand-200 bg-brand-50 py-1.5 text-xs font-medium text-brand-800 transition hover:bg-brand-100 disabled:opacity-50"
           >
             Find similar images
           </button>
         )}
-        <div
-          className="mt-1 flex flex-wrap gap-2 border-t border-navy-100 pt-2"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {card.source_url && (
-            <button
-              type="button"
-              onClick={handleDownload}
-              className="text-[10px] font-medium text-brand-600 hover:underline"
-            >
-              Open source
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => void handleSimilar()}
-            className="text-[10px] font-medium text-brand-600 hover:underline"
+        {(card.source_url || showInlineSimilar) && (
+          <div
+            className="mt-1 flex flex-wrap gap-2 border-t border-navy-100 pt-2"
+            onClick={(e) => e.stopPropagation()}
           >
-            Find similar
-          </button>
-        </div>
+            {card.source_url && (
+              <button
+                type="button"
+                onClick={handleDownload}
+                className="text-[10px] font-medium text-brand-600 hover:underline"
+              >
+                Open source
+              </button>
+            )}
+            {showInlineSimilar && (
+              <button
+                type="button"
+                onClick={() => void handleSimilar()}
+                className="text-[10px] font-medium text-brand-600 hover:underline"
+              >
+                Find similar
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </article>
   );

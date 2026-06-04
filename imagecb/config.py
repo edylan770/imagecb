@@ -118,6 +118,30 @@ class Settings:
         default_factory=lambda: float(_env("DUPLICATE_SIMILARITY_THRESHOLD", "0.95") or "0.95")
     )
 
+    # Deck slide-aware suggestion
+    deck_cache_dir: Path = field(
+        default_factory=lambda: _abspath(
+            _env("DECK_CACHE_DIR")
+            or str(_abspath(_env("DATA_DIR", "./data") or "./data") / "deck_cache")
+        )
+    )
+    deck_llm_batch_size: int = field(
+        default_factory=lambda: int(_env("DECK_LLM_BATCH_SIZE", "10") or "10")
+    )
+    deck_max_slides: int = field(
+        default_factory=lambda: int(_env("DECK_MAX_SLIDES", "200") or "200")
+    )
+    deck_max_chars_per_slide: int = field(
+        default_factory=lambda: int(_env("DECK_MAX_CHARS_PER_SLIDE", "6000") or "6000")
+    )
+    deck_cache_enabled: bool = field(
+        default_factory=lambda: (_env("DECK_CACHE_ENABLED", "true") or "true").lower()
+        in ("1", "true", "yes", "on")
+    )
+    deck_max_upload_bytes: int = field(
+        default_factory=lambda: int(_env("DECK_MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)) or str(50 * 1024 * 1024))
+    )
+
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.chroma_dir.mkdir(parents=True, exist_ok=True)
@@ -125,6 +149,7 @@ class Settings:
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
         self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         self.bm25_path.parent.mkdir(parents=True, exist_ok=True)
+        self.deck_cache_dir.mkdir(parents=True, exist_ok=True)
 
 
 SETTINGS = Settings()
