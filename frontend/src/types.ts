@@ -68,6 +68,13 @@ export interface ChatResponse {
   search_event_id?: string | null;
 }
 
+export interface SimilarResponse {
+  session_id: string | null;
+  assistant_message: string;
+  results: ResultCard[];
+  parsed_query?: ParsedQuery | null;
+}
+
 export interface ChatStreamMetadata {
   session_id: string;
   search_event_id?: string | null;

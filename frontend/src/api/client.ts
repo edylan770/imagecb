@@ -7,6 +7,7 @@ import type {
   CorpusCatalogResponse,
   IngestResponse,
   ParsedQuery,
+  SimilarResponse,
   StatusResponse,
   SuggestionsResponse,
 } from "../types";
@@ -305,11 +306,38 @@ export async function fetchCorpusCatalog(
   );
 }
 
+export async function searchSimilarByImage(
+  imageFile: File,
+  sessionId: string | null,
+  topK: number,
+  minMatchPercent: number,
+): Promise<SimilarResponse> {
+  const form = new FormData();
+  form.append("file", imageFile);
+  form.append("top_k", String(topK));
+  form.append("min_match_percent", String(minMatchPercent));
+  if (sessionId) form.append("session_id", sessionId);
+  return request<SimilarResponse>("/api/similar", {
+    method: "POST",
+    body: form,
+  });
+}
+
+export async function searchSimilarByImageId(
 export async function sendSimilar(
   imageId: string,
   sessionId: string | null,
   topK: number,
   minMatchPercent: number,
+): Promise<SimilarResponse> {
+  const form = new FormData();
+  form.append("image_id", imageId);
+  form.append("top_k", String(topK));
+  form.append("min_match_percent", String(minMatchPercent));
+  if (sessionId) form.append("session_id", sessionId);
+  return request<SimilarResponse>("/api/similar", {
+    method: "POST",
+    body: form,
 ): Promise<ChatResponse & { search_event_id?: string | null }> {
   return request("/api/similar", {
     method: "POST",
