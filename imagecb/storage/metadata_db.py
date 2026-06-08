@@ -63,6 +63,12 @@ class ImageRecord(Base):
     use_case = Column(Text, nullable=True)
     recommended_cases_json = Column(Text, nullable=True)
 
+    theme = Column(Text, nullable=True)
+    search_aliases_json = Column(Text, nullable=True)
+    slide_body_text = Column(Text, nullable=True)
+    caption_quality = Column(String, nullable=True)  # ok | weak | failed
+    text_read_uncertain = Column(Integer, nullable=True)  # 0/1
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     deleted_at = Column(DateTime, nullable=True, index=True)
@@ -89,16 +95,35 @@ def _migrate_schema(engine) -> None:
                 "recommended_cases_json",
                 "ALTER TABLE images ADD COLUMN recommended_cases_json TEXT",
             ),
+            ("theme", "ALTER TABLE images ADD COLUMN theme TEXT"),
+            ("search_aliases_json", "ALTER TABLE images ADD COLUMN search_aliases_json TEXT"),
+            ("slide_body_text", "ALTER TABLE images ADD COLUMN slide_body_text TEXT"),
+            ("caption_quality", "ALTER TABLE images ADD COLUMN caption_quality TEXT"),
+            ("text_read_uncertain", "ALTER TABLE images ADD COLUMN text_read_uncertain INTEGER"),
         ):
             if col not in cols:
                 conn.execute(text(ddl))
         conn.commit()
 
 
+def _configure_sqlite_connection(dbapi_connection, _connection_record) -> None:
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=30000")
+    cursor.close()
+
+
 def get_engine():
     global _engine, _SessionLocal
     if _engine is None:
-        _engine = create_engine(_engine_url(), future=True)
+        from sqlalchemy import event
+
+        _engine = create_engine(
+            _engine_url(),
+            future=True,
+            connect_args={"check_same_thread": False, "timeout": 30},
+        )
+        event.listen(_engine, "connect", _configure_sqlite_connection)
         Base.metadata.create_all(_engine)
         _migrate_schema(_engine)
         from imagecb.telemetry.schema import ensure_telemetry_schema

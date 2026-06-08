@@ -40,7 +40,16 @@ Rules:
 - Do not set source_filters (file_types, filename_contains, authors) or time_filter unless the user
   explicitly mentioned them in this turn or they appear in active filters from a prior refinement.
 - Treat phrases like "narrow it down", "only the ones with...", "from those" as refinements.
-- Never invent filenames or authors that the user did not mention or that aren't visible in history."""
+- Never invent filenames or authors that the user did not mention or that aren't visible in history.
+- Keep semantic_query close to the user's wording; acronym and synonym expansion happens downstream."""
+
+
+ACRONYM_SYSTEM_PROMPT = (
+    "You expand acronyms and abbreviations for image search. "
+    "Return ONLY a JSON object: {\"expansion\": string}. "
+    "The expansion should be the full phrase in lowercase. "
+    "If you cannot expand the acronym, return {\"expansion\": \"\"}."
+)
 
 
 def _user_payload(
@@ -94,6 +103,69 @@ class QueryLLM:
         else:
             raise ValueError(f"Unknown LLM provider: {self.provider}")
         return _coerce_json(raw)
+
+    def expand_acronym(self, token: str, corpus_vocab: List[str]) -> str:
+        """Expand an unrecognized acronym using the query LLM."""
+        vocab_block = ", ".join(corpus_vocab[:50]) if corpus_vocab else "(empty)"
+        user_text = (
+            f"Acronym: {token}\n"
+            f"Corpus vocabulary (for context): {vocab_block}\n"
+            "Return the JSON object now."
+        )
+        if self.provider == "bedrock":
+            raw = self._expand_acronym_bedrock(user_text)
+        elif self.provider == "openai":
+            raw = self._expand_acronym_openai(user_text)
+        elif self.provider == "anthropic":
+            raw = self._expand_acronym_anthropic(user_text)
+        else:
+            return ""
+        data = _coerce_json(raw)
+        return str(data.get("expansion") or "").strip().lower()
+
+    def _expand_acronym_bedrock(self, user_text: str) -> str:
+        from imagecb.models.bedrock_client import get_bedrock_runtime
+
+        response = get_bedrock_runtime().converse(
+            modelId=self.model,
+            system=[{"text": ACRONYM_SYSTEM_PROMPT}],
+            messages=[{"role": "user", "content": [{"text": user_text}]}],
+            inferenceConfig={"temperature": 0.0, "maxTokens": 200},
+        )
+        parts = [
+            block.get("text", "")
+            for block in response["output"]["message"]["content"]
+            if "text" in block
+        ]
+        return "".join(parts) or "{}"
+
+    def _expand_acronym_openai(self, user_text: str) -> str:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=SETTINGS.openai_api_key)
+        resp = client.chat.completions.create(
+            model=self.model,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": ACRONYM_SYSTEM_PROMPT},
+                {"role": "user", "content": user_text},
+            ],
+            temperature=0.0,
+        )
+        return resp.choices[0].message.content or "{}"
+
+    def _expand_acronym_anthropic(self, user_text: str) -> str:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=SETTINGS.anthropic_api_key)
+        msg = client.messages.create(
+            model=self.model,
+            max_tokens=200,
+            system=ACRONYM_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_text}],
+        )
+        parts = [b.text for b in msg.content if getattr(b, "type", None) == "text"]
+        return "".join(parts) or "{}"
 
     def _parse_bedrock(
         self,

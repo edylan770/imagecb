@@ -201,3 +201,119 @@ def test_search_similar_uses_embed_image_for_indexed_image(
     embedder.embed_image.assert_called_once()
     embedder.embed_image_with_context.assert_not_called()
     assert outcome.spec.semantic_query
+
+
+@patch("imagecb.retrieval.similar.run_text_similar_leg")
+@patch("imagecb.retrieval.similar.vector_store.query")
+@patch("imagecb.retrieval.similar.get_captioner")
+@patch("imagecb.retrieval.similar.get_embedder")
+@patch("imagecb.retrieval.similar._load_image_for_record")
+@patch("imagecb.retrieval.similar.metadata_db.get_record")
+@patch("imagecb.retrieval.similar.metadata_db.get_active_image_ids")
+def test_search_similar_excludes_reference_from_text_leg(
+    mock_active,
+    mock_get_record,
+    mock_load_image,
+    mock_get_embedder,
+    mock_get_captioner,
+    mock_query,
+    mock_text_leg,
+):
+    rec_ref = _record("ref-1")
+    rec_img2 = _record("img-2")
+    mock_get_record.return_value = rec_ref
+    mock_load_image.return_value = Image.new("RGB", (64, 64))
+    mock_active.return_value = ["ref-1", "img-2"]
+
+    embedder = MagicMock()
+    embedder.embed_image.return_value = np.zeros(1024, dtype=np.float32)
+    mock_get_embedder.return_value = embedder
+
+    captioner = MagicMock()
+    captioner.query_image.return_value = ImageQueryJSON(search_query="hero banner")
+    mock_get_captioner.return_value = captioner
+
+    mock_query.return_value = [("img-2", 0.75)]
+    mock_text_leg.return_value = [
+        RankedResult(
+            image_id="ref-1",
+            score=0.99,
+            record=rec_ref,
+            provenance_line="ref",
+            score_kind="rerank",
+        ),
+        RankedResult(
+            image_id="img-2",
+            score=0.80,
+            record=rec_img2,
+            provenance_line="img2",
+            score_kind="rerank",
+        ),
+    ]
+
+    with patch(
+        "imagecb.retrieval.similar.metadata_db.get_records",
+        return_value=[rec_img2],
+    ):
+        outcome = search_similar(image_id="ref-1", top_k=3, exclude_image_id="ref-1")
+
+    assert all(r.image_id != "ref-1" for r in outcome.results)
+    assert [r.image_id for r in outcome.results] == ["img-2"]
+
+
+@patch("imagecb.retrieval.similar.run_text_similar_leg")
+@patch("imagecb.retrieval.similar.vector_store.query")
+@patch("imagecb.retrieval.similar.get_captioner")
+@patch("imagecb.retrieval.similar.get_embedder")
+@patch("imagecb.retrieval.similar._load_image_for_record")
+@patch("imagecb.retrieval.similar.metadata_db.get_record")
+@patch("imagecb.retrieval.similar.metadata_db.get_active_image_ids")
+def test_search_similar_excludes_reference_from_text_leg(
+    mock_active,
+    mock_get_record,
+    mock_load_image,
+    mock_get_embedder,
+    mock_get_captioner,
+    mock_query,
+    mock_text_leg,
+):
+    rec_ref = _record("ref-1")
+    rec_img2 = _record("img-2")
+    mock_get_record.return_value = rec_ref
+    mock_load_image.return_value = Image.new("RGB", (64, 64))
+    mock_active.return_value = ["ref-1", "img-2"]
+
+    embedder = MagicMock()
+    embedder.embed_image.return_value = np.zeros(1024, dtype=np.float32)
+    mock_get_embedder.return_value = embedder
+
+    captioner = MagicMock()
+    captioner.query_image.return_value = ImageQueryJSON(search_query="hero banner")
+    mock_get_captioner.return_value = captioner
+
+    mock_query.return_value = [("img-2", 0.75)]
+    mock_text_leg.return_value = [
+        RankedResult(
+            image_id="ref-1",
+            score=0.99,
+            record=rec_ref,
+            provenance_line="ref",
+            score_kind="rerank",
+        ),
+        RankedResult(
+            image_id="img-2",
+            score=0.80,
+            record=rec_img2,
+            provenance_line="img2",
+            score_kind="rerank",
+        ),
+    ]
+
+    with patch(
+        "imagecb.retrieval.similar.metadata_db.get_records",
+        return_value=[rec_img2],
+    ):
+        outcome = search_similar(image_id="ref-1", top_k=3, exclude_image_id="ref-1")
+
+    assert all(r.image_id != "ref-1" for r in outcome.results)
+    assert [r.image_id for r in outcome.results] == ["img-2"]

@@ -6,7 +6,8 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 from imagecb.retrieval.hybrid import Candidate
-from imagecb.retrieval.rerank import RankedResult, rerank
+from imagecb.retrieval.rerank import RankedResult, _candidate_text, rerank
+from imagecb.storage.metadata_db import serialize_list
 from imagecb.storage.metadata_db import ImageRecord
 
 
@@ -70,3 +71,14 @@ def test_rerank_min_score_zero_returns_all(mock_get_records, mock_get_reranker):
     results = rerank("test", candidates, top_k=10, min_score=0.0)
 
     assert len(results) == 2
+
+
+def test_candidate_text_includes_theme_and_aliases():
+    record = _record("x")
+    record.theme = "financial reporting"
+    record.search_aliases_json = serialize_list(["sales", "earnings"])
+    record.slide_body_text = "Quarterly metrics"
+    text = _candidate_text(record)
+    assert "financial reporting" in text
+    assert "sales" in text
+    assert "Quarterly metrics" in text

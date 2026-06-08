@@ -48,27 +48,36 @@ class RankedResult:
 def _candidate_text(r: ImageRecord) -> str:
     parts: List[str] = []
     for v in (
-        r.image_name,
-        r.caption_detailed,
-        r.caption_short,
-        r.use_case,
         r.scene,
         r.text_overlay_summary,
         r.slide_title,
         r.slide_notes,
+        r.slide_body_text,
         r.ocr_text,
+    ):
+        if v:
+            parts.append(v)
+    objects = deserialize_list(r.objects_json)
+    if objects:
+        parts.append("objects: " + ", ".join(objects))
+    for v in (
+        r.image_name,
+        r.caption_detailed,
+        r.caption_short,
+        r.theme,
+        r.use_case,
     ):
         if v:
             parts.append(v)
     tags = deserialize_list(r.tags_json)
     if tags:
         parts.append("tags: " + ", ".join(tags))
-    objects = deserialize_list(r.objects_json)
-    if objects:
-        parts.append("objects: " + ", ".join(objects))
     cases = deserialize_list(r.recommended_cases_json)
     if cases:
         parts.append("recommended: " + "; ".join(cases))
+    aliases = deserialize_list(r.search_aliases_json)
+    if aliases:
+        parts.append("aliases: " + ", ".join(aliases))
     return "\n".join(parts)
 
 

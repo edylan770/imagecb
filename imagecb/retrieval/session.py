@@ -18,6 +18,7 @@ from typing import List, Optional, Tuple
 from imagecb.config import SETTINGS
 from imagecb.retrieval.hybrid import search
 from imagecb.retrieval.query_build import rerank_query_text, should_restrict_to_previous
+from imagecb.retrieval.query_expand import expand_query_spec
 from imagecb.retrieval.query_parser import (
     QuerySpec,
     SourceFilters,
@@ -111,6 +112,7 @@ class ChatSession:
         history_summary = summarize_history(self.history)
         session_ctx = build_session_context(self.last_spec, self.last_results)
         spec = parse_query(text, history_summary, session_context=session_ctx)
+        spec = expand_query_spec(spec)
 
         sticky_merged = False
         if self.last_spec is not None and spec.is_refinement:
@@ -195,6 +197,7 @@ class ChatSession:
             time_filter=spec.time_filter,
             top_k=spec.top_k,
             is_refinement=True,
+            expanded_keywords=list(spec.expanded_keywords),
         )
         self.last_spec = merged
 

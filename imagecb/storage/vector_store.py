@@ -91,6 +91,31 @@ def delete(image_ids: Sequence[str]) -> None:
     col.delete(ids=list(image_ids))
 
 
+def list_ids(*, batch_size: int = 500) -> set[str]:
+    """Return all image_id values present in the Chroma collection."""
+    col = _get_collection()
+    n = col.count()
+    if n == 0:
+        return set()
+    out: set[str] = set()
+
+    def _consume(res: dict) -> None:
+        for i in res.get("ids") or []:
+            out.add(str(i))
+
+    try:
+        offset = 0
+        while offset < n:
+            limit = min(batch_size, n - offset)
+            res = col.get(include=[], limit=limit, offset=offset)
+            offset += limit
+            _consume(res)
+    except TypeError:
+        res = col.get(include=[], limit=n)
+        _consume(res)
+    return out
+
+
 def get_all_embeddings(*, batch_size: int = 500) -> List[tuple[str, np.ndarray]]:
     """Return (image_id, embedding) for all vectors in the collection."""
     col = _get_collection()

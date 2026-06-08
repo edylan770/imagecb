@@ -100,6 +100,7 @@ def _fuse_and_rank(
     *,
     top_k: int,
     min_score: float,
+    exclude_image_id: Optional[str] = None,
 ) -> List[RankedResult]:
     text_hits = [(r.image_id, r.score) for r in text_ranked]
     merged = rrf_merge(visual_hits, text_hits, SETTINGS.rrf_k)
@@ -111,6 +112,8 @@ def _fuse_and_rank(
 
     results: List[RankedResult] = []
     for c in head:
+        if exclude_image_id and c.image_id == exclude_image_id:
+            continue
         rec = records.get(c.image_id)
         if rec is None:
             continue
@@ -172,9 +175,19 @@ def search_similar(
 
     visual_hits = _visual_hits(query_emb, dense_k=dense_k, exclude_image_id=exclude_image_id)
     text_ranked = run_text_similar_leg(spec, facets, restrict_to=restrict_to, top_k=top_k)
+    if exclude_image_id:
+        text_ranked = [r for r in text_ranked if r.image_id != exclude_image_id]
 
     if not visual_hits and not text_ranked:
         return SimilarSearchOutcome(results=[], facets=facets, spec=spec)
 
-    results = _fuse_and_rank(visual_hits, text_ranked, top_k=top_k, min_score=min_score)
+    results = _fuse_and_rank(
+        visual_hits,
+        text_ranked,
+        top_k=top_k,
+        min_score=min_score,
+        exclude_image_id=exclude_image_id,
+    )
+    if exclude_image_id:
+        results = [r for r in results if r.image_id != exclude_image_id]
     return SimilarSearchOutcome(results=results, facets=facets, spec=spec)

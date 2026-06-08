@@ -108,6 +108,40 @@ class Settings:
     ingest_batch_upsert: int = field(
         default_factory=lambda: int(_env("INGEST_BATCH_UPSERT", "16") or "16")
     )
+    ingest_batch_size: int = field(
+        default_factory=lambda: int(_env("INGEST_BATCH_SIZE", "0") or "0")
+    )
+    ingest_image_timeout_sec: int = field(
+        default_factory=lambda: int(_env("INGEST_IMAGE_TIMEOUT_SEC", "300") or "300")
+    )
+
+    # Post-ingest index repair
+    post_ingest_repair_enabled: bool = field(
+        default_factory=lambda: (_env("POST_INGEST_REPAIR_ENABLED", "true") or "true").lower()
+        in ("1", "true", "yes", "on")
+    )
+    post_ingest_repair_include_weak: bool = field(
+        default_factory=lambda: (_env("POST_INGEST_REPAIR_INCLUDE_WEAK", "false") or "false").lower()
+        in ("1", "true", "yes", "on")
+    )
+    post_ingest_repair_reindex_vectors: bool = field(
+        default_factory=lambda: (_env("POST_INGEST_REPAIR_REINDEX_VECTORS", "true") or "true").lower()
+        in ("1", "true", "yes", "on")
+    )
+
+    # Bedrock API resilience
+    bedrock_max_concurrent: int = field(
+        default_factory=lambda: int(_env("BEDROCK_MAX_CONCURRENT", "2") or "2")
+    )
+    bedrock_read_timeout: int = field(
+        default_factory=lambda: int(_env("BEDROCK_READ_TIMEOUT", "120") or "120")
+    )
+    bedrock_connect_timeout: int = field(
+        default_factory=lambda: int(_env("BEDROCK_CONNECT_TIMEOUT", "10") or "10")
+    )
+    bedrock_max_retries: int = field(
+        default_factory=lambda: int(_env("BEDROCK_MAX_RETRIES", "6") or "6")
+    )
 
     # Admin / telemetry
     admin_api_key: str = field(default_factory=lambda: _env("ADMIN_API_KEY", "") or "")

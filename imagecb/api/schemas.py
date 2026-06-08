@@ -30,6 +30,8 @@ class ResultCardOut(BaseModel):
     use_case: str = ""
     tags: List[str] = Field(default_factory=list)
     recommended_cases: List[str] = Field(default_factory=list)
+    theme: str = ""
+    aliases: List[str] = Field(default_factory=list)
     source_url: Optional[str] = None
     source_location: str = ""
     source_path: Optional[str] = None
@@ -42,6 +44,8 @@ class CatalogItemOut(BaseModel):
     use_case: str = ""
     tags: List[str] = Field(default_factory=list)
     recommended_cases: List[str] = Field(default_factory=list)
+    theme: str = ""
+    aliases: List[str] = Field(default_factory=list)
     caption: str = ""
     source_name: str = ""
 

@@ -7,6 +7,7 @@ from typing import List, Optional
 from imagecb.formatting.assistant_reply import ResultCard, build_result_cards
 from imagecb.retrieval.hybrid import search
 from imagecb.retrieval.query_build import rerank_query_text
+from imagecb.retrieval.query_expand import expand_query_spec
 from imagecb.retrieval.query_parser import QuerySpec
 from imagecb.retrieval.rerank import RankedResult, rerank
 
@@ -24,6 +25,7 @@ def search_for_description(
         raw_text=description,
         top_k=max(1, min(int(top_k), 50)),
     )
+    spec = expand_query_spec(spec)
     min_score = max(0.0, min(float(min_match_percent) / 100.0, 1.0))
     outcome = search(spec)
     candidates = outcome.candidates
