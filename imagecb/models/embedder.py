@@ -34,7 +34,7 @@ from PIL import Image
 
 from imagecb.config import SETTINGS
 
-from imagecb.models.bedrock_client import get_bedrock_runtime
+from imagecb.models.bedrock_client import bedrock_invoke_model
 
 
 
@@ -121,7 +121,7 @@ class BedrockEmbedder:
         if input_image_b64 is not None:
             body["images"] = [f"data:image/png;base64,{input_image_b64}"]
 
-        response = get_bedrock_runtime().invoke_model(
+        response = bedrock_invoke_model(
             modelId=self.model_id,
             body=json.dumps(body),
             accept="*/*",
@@ -140,7 +140,7 @@ class BedrockEmbedder:
         if input_image_b64 is not None:
             body["inputImage"] = input_image_b64
 
-        response = get_bedrock_runtime().invoke_model(
+        response = bedrock_invoke_model(
             modelId=self.model_id,
             body=json.dumps(body),
             accept="application/json",

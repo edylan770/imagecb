@@ -176,6 +176,7 @@ Use the same pattern as ingest:
 
 ```powershell
 docker compose run --rm imagecb python -m imagecb.cli status
+docker compose run --rm imagecb python -m imagecb.cli repair-index
 docker compose run --rm imagecb python -m imagecb.cli repair-captions --workers 4
 ```
 
@@ -229,7 +230,7 @@ Ingest runs **two Bedrock calls per image** (caption + embed). By default
 images are processed in parallel:
 
 ```powershell
-python -m imagecb.cli ingest "C:\path\to\corpus" --force --workers 4
+python -m imagecb.cli ingest "C:\path\to\corpus" --force --workers 2 --batch-size 25
 ```
 
 For ~50 images this typically lands around **5–10 minutes** instead of
@@ -237,10 +238,30 @@ For ~50 images this typically lands around **5–10 minutes** instead of
 
 | Flag | Effect |
 |------|--------|
-| `--workers 4` | Parallel images (default; set `INGEST_WORKERS` in `.env`) |
+| `--workers 2` | Parallel images (default `4`; use `2` for large re-ingest) |
+| `--batch-size 25` | Process files in batches of 25; rebuild BM25 once at end |
+| `--no-defer-bm25` | Rebuild BM25 after every batch (slower for large corpora) |
 | `--skip-ocr` | Skip Tesseract (faster; OCR text empty) |
 | `--max-image-side 1024` | Smaller payload to the VLM (default) |
 | `--force` | Re-process duplicates (refresh cache, captions, vectors) |
+
+**Large corpus / re-ingest:** If ingest stalls after a handful of images,
+lower concurrency and batch files:
+
+```powershell
+python -m imagecb.cli ingest "C:\path\to\corpus" --batch-size 25 --workers 2 --force
+```
+
+Set in `.env` for all ingest paths (CLI and API):
+
+```
+INGEST_WORKERS=2
+BEDROCK_MAX_CONCURRENT=2
+INGEST_BATCH_SIZE=25
+```
+
+Bedrock calls are gated by `BEDROCK_MAX_CONCURRENT` (default `2`) with
+timeouts and adaptive retries so hung workers do not freeze the whole run.
 
 If you see `ThrottlingException`, lower `--workers` to `2`. Refresh
 `AWS_BEARER_TOKEN_BEDROCK` for your `AWS_REGION` before `--force` if
@@ -256,15 +277,43 @@ without re-extracting decks:
 python -m imagecb.cli reindex-embeddings --workers 4
 ```
 
+### Index health and targeted repair
+
+After every ingest (CLI, API, or Gradio), the index is automatically
+checked for missing cached PNGs, failed captions, and missing Chroma
+vectors. When issues exist, only affected source files are re-ingested —
+not the whole corpus. Disable with `POST_INGEST_REPAIR_ENABLED=false`
+in `.env`.
+
+Check index health:
+
+```powershell
+python -m imagecb.cli status
+python -m imagecb.cli status --verbose
+```
+
+Run repair manually:
+
+```powershell
+python -m imagecb.cli repair-index
+python -m imagecb.cli repair-index --dry-run
+python -m imagecb.cli repair-index --include-weak --workers 4
+```
+
+Rows where both the cached PNG and original source file are missing are
+reported as **unrecoverable** (SQLite rows are not deleted automatically).
+Parallel ingests are not supported.
+
 ### Repair failed captions
 
-If `python -m imagecb.cli status` reports captions failed at ingest:
+If `status` still reports failed captions after automatic repair:
 
 ```powershell
 python -m imagecb.cli repair-captions --workers 4
 ```
 
 This re-runs the VLM only on failed rows and rebuilds the BM25 index.
+Requires cached PNGs; use `repair-index` if PNGs are missing.
 
 ### Launch the web UI (recommended)
 
@@ -400,9 +449,15 @@ the full list. Highlights:
 | `DATA_DIR`                  | Root for all persisted state                                                         |
 | `UPLOADS_DIR`               | Staging dir for UI uploads (default `<DATA_DIR>/uploads`)                            |
 | `TESSERACT_CMD`             | Path to `tesseract.exe`                                                              |
-| `INGEST_WORKERS`            | Parallel ingest workers (default `4`)                                                |
+| `INGEST_WORKERS`            | Parallel ingest workers (default `4`; use `2` for large re-ingest)                   |
 | `INGEST_MAX_IMAGE_SIDE`     | Max longest edge for VLM caption input (default `1024`)                              |
 | `INGEST_BATCH_UPSERT`       | Chroma vectors per batch upsert (default `16`)                                       |
+| `INGEST_BATCH_SIZE`         | CLI file batch size (default `0` = no batching; use `25` for large corpora)          |
+| `INGEST_IMAGE_TIMEOUT_SEC`  | Per-image ingest timeout in seconds (default `300`)                                  |
+| `BEDROCK_MAX_CONCURRENT`    | Max concurrent Bedrock API calls (default `2`)                                       |
+| `BEDROCK_READ_TIMEOUT`      | Bedrock read timeout in seconds (default `120`)                                      |
+| `BEDROCK_CONNECT_TIMEOUT`   | Bedrock connect timeout in seconds (default `10`)                                    |
+| `BEDROCK_MAX_RETRIES`       | Bedrock adaptive retry attempts (default `6`)                                        |
 
 ## Project layout
 

@@ -64,6 +64,8 @@ class ResultCard:
     use_case: str = ""
     tags: List[str] = field(default_factory=list)
     recommended_cases: List[str] = field(default_factory=list)
+    theme: str = ""
+    aliases: List[str] = field(default_factory=list)
     source_url: Optional[str] = None
     source_location: str = ""
     source_path: Optional[str] = None
@@ -75,12 +77,16 @@ class AssistantReply:
     results: List[ResultCard]
 
 
-def catalog_fields_from_record(record: ImageRecord) -> tuple[str, str, List[str], List[str]]:
+def catalog_fields_from_record(
+    record: ImageRecord,
+) -> tuple[str, str, List[str], List[str], str, List[str]]:
     name = (record.image_name or "").strip() or Path(record.source_file or "").name or "(unknown)"
     use_case = (record.use_case or "").strip()
     tags = deserialize_list(record.tags_json)
     recommended = deserialize_list(record.recommended_cases_json)
-    return name, use_case, tags, recommended
+    theme = (record.theme or "").strip()
+    aliases = deserialize_list(record.search_aliases_json)
+    return name, use_case, tags, recommended, theme, aliases
 
 
 def provenance_from_record(record: ImageRecord) -> Provenance:
@@ -142,7 +148,9 @@ def build_result_cards(
         prov = provenance_from_record(r.record)
         cap = _display_caption(r.record)
         src_path = resolve_source_file(r.record)
-        image_name, use_case, tags, recommended = catalog_fields_from_record(r.record)
+        image_name, use_case, tags, recommended, theme, aliases = catalog_fields_from_record(
+            r.record
+        )
         cards.append(
             ResultCard(
                 rank=rank,
@@ -157,6 +165,8 @@ def build_result_cards(
                 use_case=use_case,
                 tags=tags,
                 recommended_cases=recommended,
+                theme=theme,
+                aliases=aliases,
                 source_url=f"{source_url_prefix}/{r.image_id}" if src_path else None,
                 source_location=source_location_label(r.record),
                 source_path=str(src_path) if src_path else None,

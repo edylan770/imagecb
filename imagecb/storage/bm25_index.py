@@ -117,26 +117,36 @@ def rebuild_from_records(records) -> None:
     ids: List[str] = []
     texts: List[str] = []
     for r in records:
-        parts: List[str] = []
+        from imagecb.storage.metadata_db import deserialize_list
+
+        grounded: List[str] = []
+        for v in (
+            r.scene,
+            r.text_overlay_summary,
+            r.ocr_text,
+            r.slide_title,
+            r.slide_notes,
+            r.slide_body_text,
+        ):
+            if v:
+                grounded.append(v)
+        grounded.extend(deserialize_list(r.objects_json))
+
+        interpretive: List[str] = []
         for v in (
             r.image_name,
             r.caption_short,
             r.caption_detailed,
+            r.theme,
             r.use_case,
-            r.scene,
-            r.text_overlay_summary,
-            r.slide_title,
-            r.slide_notes,
-            r.ocr_text,
         ):
             if v:
-                parts.append(v)
-        # Tags and objects JSON, decoded
-        from imagecb.storage.metadata_db import deserialize_list
+                interpretive.append(v)
+        interpretive.extend(deserialize_list(r.tags_json))
+        interpretive.extend(deserialize_list(r.recommended_cases_json))
+        interpretive.extend(deserialize_list(r.search_aliases_json))
 
-        parts.extend(deserialize_list(r.tags_json))
-        parts.extend(deserialize_list(r.objects_json))
-        parts.extend(deserialize_list(r.recommended_cases_json))
+        parts = grounded + interpretive
         ids.append(r.image_id)
         texts.append(" \n ".join(parts))
 

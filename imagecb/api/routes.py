@@ -7,7 +7,7 @@ import json
 import logging
 from typing import Iterator, List, Optional
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image
 
@@ -102,6 +102,8 @@ def _result_card_from_dict(d: dict) -> ResultCardOut:
         use_case=str(d.get("use_case", "")),
         tags=list(d.get("tags") or []),
         recommended_cases=list(d.get("recommended_cases") or []),
+        theme=str(d.get("theme", "")),
+        aliases=list(d.get("aliases") or []),
         source_url=d.get("source_url"),
         source_location=str(d.get("source_location", "")),
         source_path=d.get("source_path"),
@@ -157,6 +159,8 @@ def _result_card_out(card) -> ResultCardOut:
         use_case=card.use_case,
         tags=card.tags,
         recommended_cases=card.recommended_cases,
+        theme=card.theme,
+        aliases=card.aliases,
         source_url=card.source_url,
         source_location=card.source_location,
         source_path=card.source_path,
@@ -373,48 +377,62 @@ def chat_stream(
 
 @router.post("/similar", response_model=SimilarResponse)
 async def similar(
-    body: Optional[SimilarRequest] = Body(None),
-    file: Optional[UploadFile] = File(None),
-    image_id: Optional[str] = Form(None),
-    session_id: Optional[str] = Form(None),
-    top_k: int = Form(10),
-    min_match_percent: int = Form(0),
-    similarity_axis: str = Form("balanced"),
+    request: Request,
     user_id: str = Depends(resolve_user_id),
 ) -> SimilarResponse:
     """Find visually similar images (JSON body or multipart with optional file)."""
     ref_id: Optional[str] = None
     upload_image: Optional[Image.Image] = None
+    upload_filename: Optional[str] = None
     sid: Optional[str] = None
-    k = top_k
-    min_pct = min_match_percent
-    axis = similarity_axis
+    k = 10
+    min_pct = 0
+    axis = "balanced"
 
-    if body is not None:
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        body = SimilarRequest.model_validate(await request.json())
         ref_id = body.image_id
         sid = body.session_id
         k = body.top_k
         min_pct = body.min_match_percent
         axis = body.similarity_axis
-    if image_id:
-        ref_id = image_id
-    if session_id:
-        sid = session_id
+    else:
+        form = await request.form()
+        raw_id = form.get("image_id")
+        if raw_id:
+            ref_id = str(raw_id)
+        raw_sid = form.get("session_id")
+        if raw_sid:
+            sid = str(raw_sid)
+        raw_top_k = form.get("top_k")
+        if raw_top_k:
+            k = int(raw_top_k)
+        raw_min = form.get("min_match_percent")
+        if raw_min is not None and raw_min != "":
+            min_pct = int(raw_min)
+        raw_axis = form.get("similarity_axis")
+        if raw_axis:
+            axis = str(raw_axis)
+
+        file = form.get("file")
+        if file is not None and hasattr(file, "read"):
+            filename = getattr(file, "filename", None)
+            if filename:
+                raw = await file.read()
+                if not raw:
+                    raise HTTPException(status_code=400, detail="empty image file")
+                try:
+                    upload_image = Image.open(io.BytesIO(raw))
+                    upload_image.load()
+                    upload_filename = filename
+                except Exception as exc:  # noqa: BLE001
+                    raise HTTPException(status_code=400, detail=f"invalid image: {exc}") from exc
 
     try:
         SimilarityAxis.parse(axis)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    if file is not None and file.filename:
-        raw = await file.read()
-        if not raw:
-            raise HTTPException(status_code=400, detail="empty image file")
-        try:
-            upload_image = Image.open(io.BytesIO(raw))
-            upload_image.load()
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=400, detail=f"invalid image: {exc}") from exc
 
     if not ref_id and upload_image is None:
         raise HTTPException(status_code=400, detail="image_id or image file is required")
@@ -447,8 +465,8 @@ async def similar(
     facets = outcome.facets
     parsed_axis = SimilarityAxis.parse(axis)
 
-    if upload_image is not None and file is not None and file.filename:
-        user_label = f"[Image search] {file.filename}"
+    if upload_image is not None and upload_filename:
+        user_label = f"[Image search] {upload_filename}"
     elif ref_id:
         rec = metadata_db.get_record(ref_id)
         name = (rec.image_name if rec else None) or ref_id
@@ -551,7 +569,7 @@ def corpus_catalog(limit: int = 40) -> CorpusCatalogResponse:
     records = metadata_db.get_recent_records(limit)
     items: List[CatalogItemOut] = []
     for r in records:
-        image_name, use_case, tags, recommended = catalog_fields_from_record(r)
+        image_name, use_case, tags, recommended, theme, aliases = catalog_fields_from_record(r)
         prov = provenance_from_record(r)
         items.append(
             CatalogItemOut(
@@ -561,6 +579,8 @@ def corpus_catalog(limit: int = 40) -> CorpusCatalogResponse:
                 use_case=use_case,
                 tags=tags,
                 recommended_cases=recommended,
+                theme=theme,
+                aliases=aliases,
                 caption=_display_caption(r),
                 source_name=prov.source_name,
             )
@@ -628,6 +648,11 @@ async def ingest(
         f"duplicates={stats.get('skipped_duplicates', 0)}, "
         f"errors={stats.get('errors', 0)}."
     )
+    from imagecb.repair import format_post_repair_summary
+
+    repair_line = format_post_repair_summary(stats.get("post_repair") or {})
+    if repair_line:
+        lines.append(repair_line)
     try:
         n = vector_store.count()
     except Exception:  # noqa: BLE001

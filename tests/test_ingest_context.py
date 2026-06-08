@@ -4,14 +4,27 @@ from __future__ import annotations
 
 from imagecb.extractors.types import Provenance
 from imagecb.ingest_context import (
+    embed_context_from_caption_and_provenance,
     embed_context_from_provenance,
     embed_context_from_record,
     embed_context_text,
 )
+from imagecb.models.vlm import CaptionJSON, GroundedCaption, InterpretiveCaption
 from imagecb.storage.metadata_db import ImageRecord
 
 
-def test_embed_context_joins_slide_fields():
+def test_embed_context_prioritizes_interpretive_fields():
+    text = embed_context_text(
+        slide_title="Q3 Revenue",
+        slide_notes="Year over year growth",
+        theme="sales performance",
+        short_caption="Quarterly revenue bar chart",
+    )
+    assert "sales performance" in text
+    assert "Quarterly revenue" in text
+
+
+def test_embed_context_joins_slide_fields_when_no_interpretive():
     text = embed_context_text(
         slide_title="Q3 Revenue",
         slide_notes="Year over year growth",
@@ -63,3 +76,37 @@ def test_embed_context_from_record():
         text_overlay_summary=None,
     )
     assert "Summary" in embed_context_from_record(record)
+
+
+def test_embed_context_from_caption_and_provenance():
+    caption = CaptionJSON(
+        interpretive=InterpretiveCaption(
+            theme="cybersecurity",
+            short_caption="Network security operations center",
+        ),
+        grounded=GroundedCaption(),
+    )
+    prov = Provenance(
+        source_file="/docs/deck.pptx",
+        source_type="pptx",
+        slide_title="Security",
+        slide_notes="Long speaker notes " * 20,
+    )
+    text = embed_context_from_caption_and_provenance(caption, prov)
+    assert "cybersecurity" in text
+    assert "Network security" in text
+
+
+def test_embed_context_from_record_with_theme():
+    record = ImageRecord(
+        image_id="id-2",
+        content_hash="h2",
+        image_path="data/images/id-2.png",
+        source_file="/docs/deck.pptx",
+        source_type="pptx",
+        theme="growth strategy",
+        caption_short="Roadmap timeline infographic",
+    )
+    text = embed_context_from_record(record)
+    assert "growth strategy" in text
+    assert "Roadmap timeline" in text

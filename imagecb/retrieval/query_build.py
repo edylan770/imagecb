@@ -7,14 +7,30 @@ from typing import List
 from imagecb.retrieval.query_parser import QuerySpec
 
 
+def _dedupe_join(parts: List[str]) -> str:
+    seen: set[str] = set()
+    out: List[str] = []
+    for p in parts:
+        p = (p or "").strip()
+        if not p:
+            continue
+        key = p.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return " ".join(out).strip()
+
+
 def dense_query_text(spec: QuerySpec) -> str:
-    """Text used for dense embedding and sparse BM25 (semantic + must-have)."""
+    """Text used for dense embedding and sparse BM25 (semantic + must-have + expanded)."""
     parts: List[str] = []
     semantic = (spec.semantic_query or spec.raw_text or "").strip()
     if semantic:
         parts.append(semantic)
     parts.extend(k for k in spec.must_have_keywords if k)
-    return " ".join(parts).strip()
+    parts.extend(k for k in spec.expanded_keywords if k)
+    return _dedupe_join(parts)
 
 
 def rerank_query_text(spec: QuerySpec, fallback: str = "") -> str:
