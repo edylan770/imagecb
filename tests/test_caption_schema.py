@@ -23,7 +23,11 @@ def _valid_nested() -> dict:
         },
         "search": {
             "tags": ["chart", "revenue", "quarterly"],
-            "recommended_cases": ["quarterly revenue chart", "sales by region"],
+            "recommended_cases": [
+                "quarterly revenue chart",
+                "sales by region",
+                "bar chart revenue",
+            ],
             "aliases": ["sales", "Q3 results"],
         },
     }
@@ -39,12 +43,19 @@ def test_validate_caption_dict_rejects_incomplete():
     assert validate_caption_dict(data) is False
 
 
+def test_validate_caption_dict_rejects_too_few_tags():
+    data = _valid_nested()
+    data["search"]["tags"] = ["chart"]
+    assert validate_caption_dict(data) is False
+
+
 def test_caption_json_from_nested_dict():
     cap = CaptionJSON.from_dict(_valid_nested())
     assert cap.image_name == "Sales Chart"
     assert cap.objects == ["bar chart"]
     assert cap.theme == "revenue growth"
     assert cap.tags == ["chart", "revenue", "quarterly"]
+    assert len(cap.recommended_cases) == 3
     assert cap.aliases == ["sales", "Q3 results"]
     assert cap.text_read_uncertain is False
 

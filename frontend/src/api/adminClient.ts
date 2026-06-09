@@ -78,6 +78,27 @@ export interface CorpusImage {
   source_type?: string;
   author?: string | null;
   image_url: string;
+  caption_quality?: string;
+  needs_regeneration?: boolean;
+}
+
+export interface RegenerateCaptionResult {
+  ok: boolean;
+  image_id: string;
+  caption_quality: string;
+  needs_regeneration: boolean;
+  caption_short?: string | null;
+  caption_detailed?: string | null;
+  image_name?: string | null;
+  tags?: string[];
+}
+
+export interface ReindexImageResult {
+  ok: boolean;
+  image_id: string;
+  reindexed: boolean;
+  caption_short?: string | null;
+  caption_quality?: string;
 }
 
 export function fetchAnalyticsSummary(days = 7): Promise<AnalyticsSummary> {
@@ -127,6 +148,18 @@ export function softDeleteImage(imageId: string): Promise<unknown> {
 
 export function restoreImage(imageId: string): Promise<unknown> {
   return adminRequest(`/api/admin/images/${imageId}/restore`, {
+    method: "POST",
+  });
+}
+
+export function regenerateCaption(imageId: string): Promise<RegenerateCaptionResult> {
+  return adminRequest(`/api/admin/images/${imageId}/regenerate-caption`, {
+    method: "POST",
+  });
+}
+
+export function reindexImage(imageId: string): Promise<ReindexImageResult> {
+  return adminRequest(`/api/admin/images/${imageId}/reindex`, {
     method: "POST",
   });
 }

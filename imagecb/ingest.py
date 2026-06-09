@@ -341,6 +341,9 @@ def _apply_outcome(
 def _finalize_ingest(*, rebuild_bm25: bool, refresh_vocab: bool) -> None:
     if refresh_vocab:
         refresh_vocab_cache()
+    from imagecb.repair import rescan_caption_quality
+
+    rescan_caption_quality()
     if rebuild_bm25:
         records = get_all_records()
         bm25_index.rebuild_from_records(records)

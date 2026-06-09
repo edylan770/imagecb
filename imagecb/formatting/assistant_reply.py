@@ -12,6 +12,7 @@ from imagecb.formatting.match_display import display_match_percent
 from imagecb.paths import resolve_image_file, resolve_source_file
 from imagecb.retrieval.query_parser import QuerySpec
 from imagecb.retrieval.rerank import RankedResult
+from imagecb.caption.quality import needs_regeneration
 from imagecb.storage.metadata_db import ImageRecord, deserialize_list
 
 _CAPTION_FAILED = "[caption failed]"
@@ -69,6 +70,8 @@ class ResultCard:
     source_url: Optional[str] = None
     source_location: str = ""
     source_path: Optional[str] = None
+    caption_quality: str = "ok"
+    needs_regeneration: bool = False
 
 
 @dataclass
@@ -137,6 +140,11 @@ def source_location_label(record: ImageRecord) -> str:
     return Path(record.source_file or "").name or ""
 
 
+def _caption_quality_fields(record: ImageRecord) -> tuple[str, bool]:
+    quality = (record.caption_quality or "ok").lower()
+    return quality, needs_regeneration(quality)
+
+
 def build_result_cards(
     results: Sequence[RankedResult],
     *,
@@ -151,6 +159,7 @@ def build_result_cards(
         image_name, use_case, tags, recommended, theme, aliases = catalog_fields_from_record(
             r.record
         )
+        caption_quality, regen = _caption_quality_fields(r.record)
         cards.append(
             ResultCard(
                 rank=rank,
@@ -170,6 +179,8 @@ def build_result_cards(
                 source_url=f"{source_url_prefix}/{r.image_id}" if src_path else None,
                 source_location=source_location_label(r.record),
                 source_path=str(src_path) if src_path else None,
+                caption_quality=caption_quality,
+                needs_regeneration=regen,
             )
         )
     return cards

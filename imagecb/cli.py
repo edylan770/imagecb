@@ -141,7 +141,8 @@ def status(
     )
     typer.echo(
         f"Missing cached PNGs: {report.missing_cache_count} | Captions failed: {report.failed_caption_count} | "
-        f"Captions weak: {report.weak_caption_count} | Missing Chroma vectors: {report.missing_chroma_count}"
+        f"Captions weak: {report.weak_caption_count} | Needs regeneration: {report.needs_regeneration_count} | "
+        f"Missing Chroma vectors: {report.missing_chroma_count}"
     )
 
     has_issues = (
@@ -307,6 +308,22 @@ def repair_index_cmd(
     )
 
 
+@app.command(name="rescan-captions")
+def rescan_captions_cmd(
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Re-assess caption quality flags on all indexed images (no VLM calls)."""
+    _configure_logging(verbose)
+    from imagecb.repair import rescan_caption_quality
+
+    stats = rescan_caption_quality()
+    typer.echo(
+        f"Done in {stats.get('elapsed_sec', 0)}s. "
+        f"scanned={stats['scanned']} updated={stats['updated']} "
+        f"ok={stats['ok']} weak={stats['weak']} failed={stats['failed']}"
+    )
+
+
 @app.command(name="repair-captions")
 def repair_captions_cmd(
     workers: int = typer.Option(
@@ -403,6 +420,135 @@ def expand_query_cmd(
             typer.echo(f"  {k} -> {vals}")
     typer.echo(f"expanded_terms   : {result.all_terms}")
     typer.echo(f"dense_query      : {' '.join([result.original] + result.all_terms)}")
+
+
+def _parse_k_values(raw: str) -> list[int]:
+    values: list[int] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        k = int(part)
+        if k < 1:
+            raise typer.BadParameter("k values must be >= 1")
+        values.append(k)
+    if not values:
+        raise typer.BadParameter("provide at least one k value, e.g. 1,3,5,10")
+    return sorted(set(values))
+
+
+@app.command(name="eval-search")
+def eval_search_cmd(
+    golden: Path = typer.Option(
+        Path("eval/golden.json"),
+        "--golden",
+        help="Path to the golden-set JSON file.",
+        exists=True,
+        readable=True,
+    ),
+    mode: str = typer.Option(
+        "all",
+        "--mode",
+        help="Which pipelines to run: all, chat, retrieval, or similar.",
+    ),
+    k: str = typer.Option("1,3,5,10", "--k", help="Comma-separated Hit@k values to report."),
+    case_id: Optional[str] = typer.Option(None, "--case-id", help="Run a single case by id."),
+    failures_only: bool = typer.Option(False, "--failures-only", help="Only print failing cases."),
+    json_out: Optional[Path] = typer.Option(None, "--json-out", help="Write machine-readable results here."),
+    skip_id_validation: bool = typer.Option(
+        False,
+        "--skip-id-validation",
+        help="Do not require golden-set image IDs to exist in the index (for drafting cases).",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Run the golden-set search evaluation harness against the local index."""
+    _configure_logging(verbose)
+    from imagecb.eval.dataset import GoldenSetValidationError, load_golden_set
+    from imagecb.eval.report import format_failures, format_summary, write_json_report
+    from imagecb.eval.runner import run_eval
+
+    allowed_modes = {"all", "chat", "retrieval", "similar"}
+    if mode not in allowed_modes:
+        raise typer.BadParameter(f"--mode must be one of: {', '.join(sorted(allowed_modes))}")
+
+    k_values = _parse_k_values(k)
+    try:
+        golden_set = load_golden_set(golden, validate_ids=not skip_id_validation)
+    except GoldenSetValidationError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    try:
+        result = run_eval(golden_set, mode=mode, k_values=k_values, case_id=case_id)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(format_summary(result, k_values))
+    detail = format_failures(result, k_values, failures_only=failures_only)
+    if detail:
+        typer.echo("")
+        typer.echo(detail)
+    if json_out is not None:
+        write_json_report(json_out, result, k_values)
+        typer.echo(f"\nWrote {json_out}")
+
+
+@app.command(name="eval-suggest")
+def eval_suggest_cmd(
+    text: Optional[str] = typer.Argument(None, help="Text query to search (for labeling text cases)."),
+    similar: Optional[str] = typer.Option(None, "--similar", help="Reference image_id for similar-search labeling."),
+    top_k: int = typer.Option(15, "--top-k", min=1, max=50),
+    suggest_mode: str = typer.Option(
+        "retrieval",
+        "--mode",
+        help="Text search path for labeling: chat (production) or retrieval (stable).",
+    ),
+    axis: str = typer.Option("balanced", "--axis", help="Similarity axis when using --similar."),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Print ranked image IDs to help build eval/golden.json."""
+    _configure_logging(verbose)
+
+    if similar:
+        from imagecb.retrieval.similar import search_similar
+
+        outcome = search_similar(
+            image_id=similar,
+            top_k=top_k,
+            min_match_percent=0,
+            similarity_axis=axis,
+            exclude_image_id=similar,
+        )
+        typer.echo(f"similar  ref={similar}  axis={axis}  top_k={top_k}")
+        for rank, row in enumerate(outcome.results, start=1):
+            caption = (row.record.caption_short or "").strip()
+            source = Path(row.record.source_file).name
+            typer.echo(f"{rank:>2}  {row.image_id}  {source}  {caption}")
+        return
+
+    if not text:
+        raise typer.BadParameter("provide TEXT or --similar IMAGE_ID")
+
+    if suggest_mode == "chat":
+        from imagecb.retrieval.session import ChatSession
+
+        outcome = ChatSession().ask(text, top_k=top_k, min_match_percent=0)
+        ranked = outcome.results
+        typer.echo(f"chat  query={text!r}  top_k={top_k}")
+    elif suggest_mode == "retrieval":
+        from imagecb.deck.search import search_for_description
+
+        _cards, ranked = search_for_description(text, top_k=top_k, min_match_percent=0)
+        typer.echo(f"retrieval  query={text!r}  top_k={top_k}")
+    else:
+        raise typer.BadParameter("--mode must be chat or retrieval")
+
+    for rank, row in enumerate(ranked, start=1):
+        caption = (row.record.caption_short or "").strip()
+        source = Path(row.record.source_file).name
+        typer.echo(f"{rank:>2}  {row.image_id}  {source}  {caption}")
 
 
 @app.command(name="repair-search-terms")

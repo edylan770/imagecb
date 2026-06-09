@@ -18,5 +18,20 @@
   "api": "application programming interface",
   "crm": "customer relationship management",
   "erp": "enterprise resource planning",
-  "saas": "software as a service"
+  "saas": "software as a service",
+  "graph": "chart",
+  "graphs": "chart",
+  "infographic": "diagram",
+  "infographics": "diagram",
+  "presentation": "slide",
+  "presentations": "slide",
+  "photograph": "photo",
+  "photographs": "photo",
+  "flowchart": "diagram",
+  "flowcharts": "diagram",
+  "workflow": "process",
+  "workflows": "process",
+  "org chart": "organization chart",
+  "organisation chart": "organization chart",
+  "orgchart": "organization chart"
 }

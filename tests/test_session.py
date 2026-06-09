@@ -126,3 +126,59 @@ def test_ask_relaxes_min_score_when_all_filtered(mock_parse, mock_search, mock_r
     assert result.relaxed_min_score is True
     assert result.filtered_by_min_score is True
     assert len(result.results) == 1
+
+
+def test_apply_similar_results_not_refinement():
+    from imagecb.retrieval.rerank import RankedResult
+
+    session = ChatSession()
+    spec = _spec(semantic_query="hero banner", is_refinement=True)
+    results = [
+        RankedResult(
+            image_id="img-1",
+            score=0.9,
+            record=MagicMock(),
+            provenance_line="Slide 1",
+        ),
+        RankedResult(
+            image_id="img-2",
+            score=0.8,
+            record=MagicMock(),
+            provenance_line="Slide 2",
+        ),
+    ]
+
+    session.apply_similar_results(results, spec=spec)
+
+    assert session.last_candidate_ids == ["img-1", "img-2"]
+    assert session.last_spec is not None
+    assert session.last_spec.is_refinement is False
+    assert session.last_spec.semantic_query == "hero banner"
+
+
+def test_apply_similar_results_not_refinement():
+    from imagecb.retrieval.rerank import RankedResult
+
+    session = ChatSession()
+    spec = _spec(semantic_query="hero banner", is_refinement=True)
+    results = [
+        RankedResult(
+            image_id="img-1",
+            score=0.9,
+            record=MagicMock(),
+            provenance_line="Slide 1",
+        ),
+        RankedResult(
+            image_id="img-2",
+            score=0.8,
+            record=MagicMock(),
+            provenance_line="Slide 2",
+        ),
+    ]
+
+    session.apply_similar_results(results, spec=spec)
+
+    assert session.last_candidate_ids == ["img-1", "img-2"]
+    assert session.last_spec is not None
+    assert session.last_spec.is_refinement is False
+    assert session.last_spec.semantic_query == "hero banner"

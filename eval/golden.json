@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "text_cases": [
+    {
+      "id": "dashboard-screenshots",
+      "query": "screenshots of operational dashboards",
+      "relevant_ids": [],
+      "top_k": 10,
+      "notes": "Replace relevant_ids with real image_id values from your corpus.",
+      "template": true
+    },
+    {
+      "id": "architecture-diagrams",
+      "query": "system architecture diagrams from internal decks",
+      "relevant_ids": [],
+      "top_k": 10,
+      "notes": "Example shape — set template to false and add IDs after labeling.",
+      "template": true
+    }
+  ],
+  "similar_cases": [
+    {
+      "id": "style-match-deck-icon",
+      "image_id": "00000000-0000-0000-0000-000000000001",
+      "relevant_ids": [],
+      "similarity_axis": "style",
+      "top_k": 10,
+      "notes": "Replace image_id and relevant_ids with real values; set template to false.",
+      "template": true
+    }
+  ]
+}

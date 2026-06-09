@@ -116,6 +116,39 @@ def list_ids(*, batch_size: int = 500) -> set[str]:
     return out
 
 
+def get_embeddings(image_ids: Sequence[str]) -> dict[str, np.ndarray]:
+    """Return stored embeddings for the given image IDs."""
+    if not image_ids:
+        return {}
+    col = _get_collection()
+    res = col.get(ids=list(image_ids), include=["embeddings"])
+    out: dict[str, np.ndarray] = {}
+    ids = res.get("ids") or []
+    raw_embs = res.get("embeddings")
+    if not ids or raw_embs is None:
+        return out
+    if isinstance(raw_embs, np.ndarray):
+        if raw_embs.ndim == 2:
+            emb_list = [raw_embs[i] for i in range(raw_embs.shape[0])]
+        elif raw_embs.ndim == 1 and len(ids) == 1:
+            emb_list = [raw_embs]
+        else:
+            emb_list = []
+    else:
+        emb_list = list(raw_embs)
+    for i, emb in zip(ids, emb_list):
+        if emb is None:
+            continue
+        try:
+            arr = np.asarray(emb, dtype=np.float64)
+        except (ValueError, TypeError):
+            continue
+        if arr.ndim != 1 or arr.size == 0:
+            continue
+        out[str(i)] = arr
+    return out
+
+
 def get_all_embeddings(*, batch_size: int = 500) -> List[tuple[str, np.ndarray]]:
     """Return (image_id, embedding) for all vectors in the collection."""
     col = _get_collection()

@@ -63,12 +63,17 @@ export async function fetchStatus(): Promise<StatusResponse> {
 
 export async function fetchSuggestions(
   recentTitles: string[],
+  recentQueries: string[],
   limit = 4,
 ): Promise<SuggestionsResponse> {
   return request<SuggestionsResponse>("/api/suggestions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ recent_titles: recentTitles, limit }),
+    body: JSON.stringify({
+      recent_titles: recentTitles,
+      recent_queries: recentQueries,
+      limit,
+    }),
   });
 }
 

@@ -14,6 +14,7 @@ import {
   loadStoredState,
   newTurnId,
   recentChatTitles,
+  recentUserQueries,
   saveStoredState,
   titleFromMessage,
   turnsToMessages,
@@ -176,9 +177,10 @@ export default function App() {
 
     const controller = new AbortController();
     const titles = recentChatTitles(conversations);
+    const queries = recentUserQueries(conversations);
 
     setSuggestionsLoading(true);
-    fetchSuggestions(titles)
+    fetchSuggestions(titles, queries)
       .then((res) => {
         if (controller.signal.aborted) return;
         setSuggestions(res.suggestions);

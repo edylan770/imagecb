@@ -11,7 +11,12 @@ from imagecb.suggestions import generate as gen_mod
 from imagecb.suggestions.corpus_summary import CorpusContext, SourceFileStat
 from imagecb.suggestions.generate import (
     ONBOARDING_SUGGESTIONS,
+    _blend_suggestions,
+    _corpus_heuristic_suggestions,
+    _is_filename_filter_suggestion,
     generate_suggestions,
+    merge_recent_queries,
+    normalize_recent_queries,
     normalize_recent_titles,
     _coerce_suggestions_json,
 )
@@ -22,6 +27,12 @@ def clear_cache():
     gen_mod._cache.clear()
     yield
     gen_mod._cache.clear()
+
+
+def _ctx(**kwargs) -> CorpusContext:
+    defaults = dict(indexed_count=5, fingerprint="fp")
+    defaults.update(kwargs)
+    return CorpusContext(**defaults)
 
 
 def test_coerce_suggestions_json_from_object():
@@ -39,6 +50,41 @@ def test_normalize_recent_titles_dedupes_and_skips_new_chat():
     assert normalize_recent_titles(titles) == ("Charts", "Logos")
 
 
+def test_normalize_recent_queries_dedupes():
+    queries = ["Charts", "charts", "  ", "Logos"]
+    assert normalize_recent_queries(queries) == ("Charts", "Logos")
+
+
+def test_merge_recent_queries_client_first():
+    merged = merge_recent_queries(["Local A", "Local B"], ["Server C", "Local A"])
+    assert merged == ("Local A", "Local B", "Server C")
+
+
+def test_is_filename_filter_suggestion_detects_patterns():
+    assert _is_filename_filter_suggestion("images from report.pptx")
+    assert _is_filename_filter_suggestion("Images from deck.pptx")
+    assert _is_filename_filter_suggestion("slides from annual.pdf")
+    assert not _is_filename_filter_suggestion("holographic data analytics")
+    assert not _is_filename_filter_suggestion("cybersecurity alerts and digital threats")
+
+
+def test_blend_suggestions_prioritizes_user_queries_and_strips_filename_filters():
+    ctx = _ctx(
+        sample_recommended_cases=("Healthcare technology visuals",),
+        top_tags=("healthcare",),
+    )
+    blended = _blend_suggestions(
+        ["topic A", "images from report.pptx", "topic B"],
+        ctx,
+        ("cybersecurity dashboards",),
+        4,
+    )
+    assert "cybersecurity dashboards" in blended
+    assert "images from report.pptx" not in blended
+    assert "report.pptx" not in " ".join(blended).lower()
+    assert len(blended) == 4
+
+
 def test_empty_corpus_returns_onboarding_without_llm():
     ctx = CorpusContext(indexed_count=0, fingerprint="empty")
     with patch.object(gen_mod, "get_suggestion_llm") as mock_llm:
@@ -49,7 +95,7 @@ def test_empty_corpus_returns_onboarding_without_llm():
 
 
 def test_llm_success_populates_suggestions():
-    ctx = CorpusContext(
+    ctx = _ctx(
         indexed_count=10,
         source_files=(SourceFileStat(name="deck.pptx", source_type="pptx", count=5),),
         fingerprint="abc123",
@@ -57,43 +103,129 @@ def test_llm_success_populates_suggestions():
     mock_llm = MagicMock()
     mock_llm.generate.return_value = '{"suggestions": ["A", "B", "C", "D"]}'
     with patch.object(gen_mod, "get_suggestion_llm", return_value=mock_llm):
-        r1 = generate_suggestions(["Past search"], limit=4, ctx=ctx)
-    assert r1.suggestions == ["A", "B", "C", "D"]
+        with patch.object(gen_mod, "get_recent_user_queries", return_value=[]):
+            r1 = generate_suggestions(
+                ["Past search"],
+                recent_queries=["find charts"],
+                limit=4,
+                ctx=ctx,
+            )
+    assert r1.suggestions[0] == "find charts"
+    assert "A" in r1.suggestions
+    assert "images from" not in " ".join(r1.suggestions).lower()
     assert r1.cached is False
     mock_llm.generate.assert_called_once()
 
 
+def test_llm_strips_filename_filter_from_output():
+    ctx = _ctx(
+        sample_recommended_cases=("Healthcare technology", "Cybersecurity alerts"),
+        top_tags=("healthcare", "cybersecurity"),
+        source_files=(SourceFileStat(name="report.pptx", source_type="pptx", count=5),),
+        fingerprint="fp-strip",
+    )
+    mock_llm = MagicMock()
+    mock_llm.generate.return_value = (
+        '{"suggestions": ["holographic data analytics", "images from report.pptx", '
+        '"healthcare technology", "cybersecurity alerts"]}'
+    )
+    with patch.object(gen_mod, "get_suggestion_llm", return_value=mock_llm):
+        with patch.object(gen_mod, "get_recent_user_queries", return_value=[]):
+            result = generate_suggestions([], limit=4, ctx=ctx)
+    assert "images from report.pptx" not in result.suggestions
+    assert "report.pptx" not in " ".join(result.suggestions).lower()
+    assert len(result.suggestions) == 4
+
+
 def test_cache_hit_on_second_call():
-    ctx = CorpusContext(indexed_count=5, fingerprint="fp1")
+    ctx = _ctx(indexed_count=5, fingerprint="fp1")
     mock_llm = MagicMock()
     mock_llm.generate.return_value = '{"suggestions": ["One", "Two", "Three", "Four"]}'
     with patch.object(gen_mod, "get_suggestion_llm", return_value=mock_llm):
-        r1 = generate_suggestions([], limit=4, ctx=ctx)
-        r2 = generate_suggestions([], limit=4, ctx=ctx)
+        with patch.object(gen_mod, "get_recent_user_queries", return_value=[]):
+            r1 = generate_suggestions([], limit=4, ctx=ctx)
+            r2 = generate_suggestions([], limit=4, ctx=ctx)
     assert r1.cached is False
     assert r2.cached is True
     assert r2.suggestions == r1.suggestions
     mock_llm.generate.assert_called_once()
 
 
-def test_llm_failure_uses_fallback():
-    ctx = CorpusContext(indexed_count=3, fingerprint="fp2")
+def test_cache_key_differs_by_recent_queries():
+    ctx = _ctx(fingerprint="fp1")
+    titles = gen_mod.normalize_recent_titles([])
+    key_a = gen_mod._cache_key(ctx, titles, ("charts",))
+    key_b = gen_mod._cache_key(ctx, titles, ("logos",))
+    assert key_a != key_b
+
+
+def test_llm_failure_uses_corpus_heuristic():
+    ctx = _ctx(
+        indexed_count=3,
+        fingerprint="fp2",
+        sample_recommended_cases=("Find bar charts", "Show quarterly revenue"),
+        top_tags=("chart", "revenue"),
+        source_files=(SourceFileStat(name="deck.pptx", source_type="pptx", count=2),),
+    )
     mock_llm = MagicMock()
     mock_llm.generate.side_effect = RuntimeError("bedrock down")
     with patch.object(gen_mod, "get_suggestion_llm", return_value=mock_llm):
-        result = generate_suggestions([], limit=4, ctx=ctx)
+        with patch.object(gen_mod, "get_recent_user_queries", return_value=[]):
+            result = generate_suggestions([], limit=4, ctx=ctx)
     assert len(result.suggestions) == 4
+    assert "Q3_Review.pptx" not in " ".join(result.suggestions)
+    assert "images from" not in " ".join(result.suggestions).lower()
+    assert "Find bar charts" in result.suggestions
     assert result.cached is False
 
 
+def test_heuristic_uses_recommended_cases_not_filename_filters():
+    ctx = _ctx(
+        sample_recommended_cases=("Photos of team meetings",),
+        top_tags=("meeting",),
+        source_files=(SourceFileStat(name="report.pptx", source_type="pptx", count=3),),
+    )
+    items = _corpus_heuristic_suggestions(ctx, (), 4)
+    assert "Q3_Review.pptx" not in items
+    assert "Photos of team meetings" in items
+    assert sum(1 for s in items if _is_filename_filter_suggestion(s)) == 0
+    assert "report.pptx" not in " ".join(items).lower()
+
+
+def test_telemetry_queries_merged():
+    ctx = _ctx(fingerprint="fp-tel")
+    mock_llm = MagicMock()
+    mock_llm.generate.return_value = '{"suggestions": ["A", "B", "C", "D"]}'
+    with patch.object(gen_mod, "get_suggestion_llm", return_value=mock_llm):
+        with patch.object(
+            gen_mod,
+            "get_recent_user_queries",
+            return_value=["server query"],
+        ) as mock_tel:
+            result = generate_suggestions(
+                [],
+                recent_queries=["client query"],
+                user_id="user-1",
+                limit=4,
+                ctx=ctx,
+            )
+    mock_tel.assert_called_once_with("user-1", limit=8)
+    payload = mock_llm.generate.call_args[0][0]
+    assert "client query" in payload
+    assert "server query" in payload
+    assert result.suggestions[0] == "client query"
+
+
 def test_cache_expires_after_ttl():
-    ctx = CorpusContext(indexed_count=2, fingerprint="fp3")
+    ctx = _ctx(indexed_count=2, fingerprint="fp3")
     mock_llm = MagicMock()
     mock_llm.generate.return_value = '{"suggestions": ["X", "Y", "Z", "W"]}'
     titles = gen_mod.normalize_recent_titles([])
-    key = gen_mod._cache_key(ctx, titles)
+    queries = gen_mod.normalize_recent_queries([])
+    key = gen_mod._cache_key(ctx, titles, queries)
     with patch.object(gen_mod, "get_suggestion_llm", return_value=mock_llm):
-        generate_suggestions([], limit=4, ctx=ctx)
-        gen_mod._cache[key] = (time.monotonic() - 10_000, ["X", "Y", "Z", "W"])
-        generate_suggestions([], limit=4, ctx=ctx)
+        with patch.object(gen_mod, "get_recent_user_queries", return_value=[]):
+            generate_suggestions([], limit=4, ctx=ctx)
+            gen_mod._cache[key] = (time.monotonic() - 10_000, ["X", "Y", "Z", "W"])
+            generate_suggestions([], limit=4, ctx=ctx)
     assert mock_llm.generate.call_count == 2

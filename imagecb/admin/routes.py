@@ -125,3 +125,49 @@ def admin_restore(
         code = 404 if "not found" in msg or "missing" in msg else 400
         raise HTTPException(status_code=code, detail=msg) from exc
     return {"ok": True, "image_id": image_id, "status": "restored"}
+
+
+@router.post("/images/{image_id}/regenerate-caption")
+def admin_regenerate_caption(
+    image_id: str,
+    actor: str = Depends(require_admin),
+):
+    from imagecb.repair import regenerate_caption
+
+    try:
+        result = regenerate_caption(image_id)
+    except ValueError as exc:
+        msg = str(exc)
+        code = 404 if "not found" in msg or "missing" in msg else 400
+        raise HTTPException(status_code=code, detail=msg) from exc
+    audit.append_audit(
+        actor=actor,
+        action="regenerate_caption",
+        target_type="image",
+        target_id=image_id,
+        details={"caption_quality": result.get("caption_quality")},
+    )
+    return {"ok": True, **result}
+
+
+@router.post("/images/{image_id}/reindex")
+def admin_reindex_image(
+    image_id: str,
+    actor: str = Depends(require_admin),
+):
+    from imagecb.repair import reindex_image
+
+    try:
+        result = reindex_image(image_id)
+    except ValueError as exc:
+        msg = str(exc)
+        code = 404 if "not found" in msg or "missing" in msg else 400
+        raise HTTPException(status_code=code, detail=msg) from exc
+    audit.append_audit(
+        actor=actor,
+        action="reindex",
+        target_type="image",
+        target_id=image_id,
+        details={"caption_quality": result.get("caption_quality")},
+    )
+    return {"ok": True, **result}

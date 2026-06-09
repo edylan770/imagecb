@@ -151,6 +151,15 @@ class Settings:
     duplicate_similarity_threshold: float = field(
         default_factory=lambda: float(_env("DUPLICATE_SIMILARITY_THRESHOLD", "0.95") or "0.95")
     )
+    result_deduplicate_enabled: bool = field(
+        default_factory=lambda: (_env("RESULT_DEDUPLICATE_ENABLED", "true") or "true").lower()
+        in ("1", "true", "yes", "on")
+    )
+    result_deduplicate_similarity_threshold: float = field(
+        default_factory=lambda: float(
+            _env("RESULT_DEDUPLICATE_SIMILARITY_THRESHOLD", "0.98") or "0.98"
+        )
+    )
 
     # Deck slide-aware suggestion
     deck_cache_dir: Path = field(

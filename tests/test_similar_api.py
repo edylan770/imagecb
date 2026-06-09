@@ -66,3 +66,31 @@ def test_similar_rejects_missing_input(client):
     res = client.post("/api/similar", json={})
     assert res.status_code == 400
     assert "image_id or image file is required" in res.json()["detail"]
+
+
+def test_similar_does_not_restrict_to_session_pool(client):
+    from imagecb.retrieval.session import ChatSession
+
+    session = ChatSession()
+    session.last_candidate_ids = ["img-1", "img-2"]
+    session.last_spec = QuerySpec(raw_text="prior", is_refinement=True, top_k=10)
+
+    with mock.patch("imagecb.api.routes.get_session", return_value=session):
+        with mock.patch(
+            "imagecb.api.routes.search_similar",
+            return_value=_fake_outcome(),
+        ) as mock_search:
+            res = client.post(
+                "/api/similar",
+                json={
+                    "image_id": "abc-123",
+                    "session_id": "sess-1",
+                    "top_k": 10,
+                    "min_match_percent": 0,
+                    "similarity_axis": "balanced",
+                },
+            )
+
+    assert res.status_code == 200
+    mock_search.assert_called_once()
+    assert mock_search.call_args.kwargs.get("restrict_to") is None
