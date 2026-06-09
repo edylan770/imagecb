@@ -1,10 +1,3 @@
-const FALLBACK_SUGGESTIONS = [
-  "Screenshots of dashboards from Q3_Review.pptx",
-  "Charts showing revenue growth",
-  "Only images modified this month",
-  "Logos on white backgrounds",
-];
-
 interface EmptyStateProps {
   suggestions: string[];
   loading: boolean;
@@ -16,9 +9,8 @@ export function EmptyState({
   loading,
   onPickExample,
 }: EmptyStateProps) {
-  const chips =
-    !loading && suggestions.length > 0 ? suggestions : FALLBACK_SUGGESTIONS;
   const showSkeleton = loading;
+  const hasSuggestions = !loading && suggestions.length > 0;
 
   return (
     <div className="flex flex-col items-center justify-center px-5 py-8 text-center">
@@ -53,16 +45,22 @@ export function EmptyState({
                 aria-hidden
               />
             ))
-          : chips.map((ex) => (
-              <button
-                key={ex}
-                type="button"
-                onClick={() => onPickExample(ex)}
-                className="rounded-full border border-navy-200 bg-white px-3 py-1.5 text-xs text-navy-700 shadow-sm transition hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700"
-              >
-                {ex}
-              </button>
-            ))}
+          : hasSuggestions
+            ? suggestions.map((ex) => (
+                <button
+                  key={ex}
+                  type="button"
+                  onClick={() => onPickExample(ex)}
+                  className="rounded-full border border-navy-200 bg-white px-3 py-1.5 text-xs text-navy-700 shadow-sm transition hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700"
+                >
+                  {ex}
+                </button>
+              ))
+            : (
+                <p className="text-xs text-navy-500">
+                  Suggestions will appear once your corpus is indexed.
+                </p>
+              )}
       </div>
     </div>
   );

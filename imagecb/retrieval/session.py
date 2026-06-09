@@ -185,7 +185,10 @@ class ChatSession:
         *,
         spec: QuerySpec,
     ) -> None:
-        """Update candidate pool after a similar-image search."""
+        """Update candidate pool after similar-image search.
+
+        Similar search is a new anchor, not a refinement of the prior result set.
+        """
         self.last_results = list(results)
         self.last_candidate_ids = [r.image_id for r in results]
         merged = QuerySpec(
@@ -196,7 +199,7 @@ class ChatSession:
             source_filters=spec.source_filters,
             time_filter=spec.time_filter,
             top_k=spec.top_k,
-            is_refinement=True,
+            is_refinement=False,
             expanded_keywords=list(spec.expanded_keywords),
         )
         self.last_spec = merged

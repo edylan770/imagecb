@@ -8,6 +8,8 @@ import {
   fetchDuplicateClusters,
   fetchOrphans,
   fetchSearchQuality,
+  regenerateCaption,
+  reindexImage,
   restoreImage,
   softDeleteImage,
   type AnalyticsSummary,
@@ -155,6 +157,10 @@ function CorpusPage() {
   const [deletedError, setDeletedError] = useState<string | null>(null);
   const [clusters, setClusters] = useState<unknown[]>([]);
   const [clustersError, setClustersError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<
+    Record<string, "regenerate" | "reindex">
+  >({});
+  const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
 
   const loadCorpus = useCallback(() => {
     setCorpusLoading(true);
@@ -212,6 +218,61 @@ function CorpusPage() {
     reloadAll();
   };
 
+  const handleRegenerate = async (imageId: string) => {
+    if (
+      !window.confirm(
+        "Re-run the vision model to generate a new caption and refresh search indexes? This may take a minute and uses the VLM API.",
+      )
+    ) {
+      return;
+    }
+    setCardErrors((prev) => {
+      const next = { ...prev };
+      delete next[imageId];
+      return next;
+    });
+    setPendingAction((prev) => ({ ...prev, [imageId]: "regenerate" }));
+    try {
+      await regenerateCaption(imageId);
+      reloadAll();
+    } catch (e) {
+      setCardErrors((prev) => ({
+        ...prev,
+        [imageId]: e instanceof Error ? e.message : String(e),
+      }));
+    } finally {
+      setPendingAction((prev) => {
+        const next = { ...prev };
+        delete next[imageId];
+        return next;
+      });
+    }
+  };
+
+  const handleReindex = async (imageId: string) => {
+    setCardErrors((prev) => {
+      const next = { ...prev };
+      delete next[imageId];
+      return next;
+    });
+    setPendingAction((prev) => ({ ...prev, [imageId]: "reindex" }));
+    try {
+      await reindexImage(imageId);
+      reloadAll();
+    } catch (e) {
+      setCardErrors((prev) => ({
+        ...prev,
+        [imageId]: e instanceof Error ? e.message : String(e),
+      }));
+    } finally {
+      setPendingAction((prev) => {
+        const next = { ...prev };
+        delete next[imageId];
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="space-y-8">
       <h2 className="text-lg font-semibold text-navy-900">Corpus curation</h2>
@@ -229,36 +290,74 @@ function CorpusPage() {
           <p className="text-sm text-navy-500">No indexed images.</p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {images.map((img) => (
-              <article
-                key={img.image_id}
-                className="flex flex-col overflow-hidden rounded-lg bg-white ring-1 ring-navy-200"
-              >
-                <div className="aspect-video bg-navy-50">
-                  <img
-                    src={img.image_url}
-                    alt={img.caption_short || img.image_id}
-                    className="h-full w-full object-contain"
-                    loading="lazy"
-                  />
-                </div>
-                <div className="flex flex-1 flex-col gap-1 p-2 text-xs">
-                  <p className="line-clamp-2 text-navy-800">
-                    {img.caption_short || "(no caption)"}
-                  </p>
-                  <p className="truncate text-navy-500" title={img.source_file}>
-                    {img.source_file}
-                  </p>
-                  <button
-                    type="button"
-                    className="mt-auto self-start text-red-600 hover:underline"
-                    onClick={() => void handleSoftDelete(img.image_id)}
-                  >
-                    Soft delete
-                  </button>
-                </div>
-              </article>
-            ))}
+            {images.map((img) => {
+              const pending = pendingAction[img.image_id];
+              const cardError = cardErrors[img.image_id];
+              const quality = (img.caption_quality || "ok").toLowerCase();
+              return (
+                <article
+                  key={img.image_id}
+                  className="flex flex-col overflow-hidden rounded-lg bg-white ring-1 ring-navy-200"
+                >
+                  <div className="aspect-video bg-navy-50">
+                    <img
+                      src={img.image_url}
+                      alt={img.caption_short || img.image_id}
+                      className="h-full w-full object-contain"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div className="flex flex-1 flex-col gap-1 p-2 text-xs">
+                    {img.needs_regeneration && (
+                      <span
+                        className={
+                          quality === "failed"
+                            ? "self-start rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700"
+                            : "self-start rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800"
+                        }
+                      >
+                        {quality}
+                      </span>
+                    )}
+                    <p className="line-clamp-2 text-navy-800">
+                      {img.caption_short || "(no caption)"}
+                    </p>
+                    <p className="truncate text-navy-500" title={img.source_file}>
+                      {img.source_file}
+                    </p>
+                    {cardError && (
+                      <p className="text-red-600">{cardError}</p>
+                    )}
+                    <div className="mt-auto flex flex-wrap gap-x-3 gap-y-1">
+                      <button
+                        type="button"
+                        className="font-medium text-brand-600 hover:underline disabled:opacity-50"
+                        disabled={pending !== undefined}
+                        onClick={() => void handleRegenerate(img.image_id)}
+                      >
+                        {pending === "regenerate" ? "Regenerating…" : "Regenerate"}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-navy-600 hover:underline disabled:opacity-50"
+                        disabled={pending !== undefined}
+                        onClick={() => void handleReindex(img.image_id)}
+                      >
+                        {pending === "reindex" ? "Re-indexing…" : "Re-index"}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-red-600 hover:underline disabled:opacity-50"
+                        disabled={pending !== undefined}
+                        onClick={() => void handleSoftDelete(img.image_id)}
+                      >
+                        Soft delete
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>

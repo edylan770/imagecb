@@ -25,7 +25,7 @@ class RankedResult:
     score: float
     record: ImageRecord
     provenance_line: str
-    score_kind: Literal["rerank", "dense"] = "rerank"
+    score_kind: Literal["rerank", "dense", "fusion"] = "rerank"
 
     @property
     def image_path(self) -> str:
@@ -133,4 +133,6 @@ def rerank(
     )
     if min_score > 0:
         ranked = [r for r in ranked if r.score >= min_score]
-    return ranked[:top_k]
+    from imagecb.retrieval.dedupe import dedupe_results
+
+    return dedupe_results(ranked, top_k=top_k)

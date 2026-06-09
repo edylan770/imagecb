@@ -75,3 +75,67 @@ def test_duplicate_clusters_returns_error_not_500(mock_find, admin_client):
     body = res.json()
     assert body["clusters"] == []
     assert "chroma" in (body.get("error") or "").lower()
+
+
+@patch("imagecb.admin.routes.audit.append_audit")
+@patch("imagecb.repair.regenerate_caption")
+def test_regenerate_caption_endpoint(mock_regenerate, mock_audit, admin_client):
+    mock_regenerate.return_value = {
+        "image_id": "img-1",
+        "caption_quality": "ok",
+        "needs_regeneration": False,
+        "caption_short": "New caption",
+    }
+    res = admin_client.post(
+        "/api/admin/images/img-1/regenerate-caption",
+        headers={"X-Admin-Api-Key": "test-admin-secret"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["caption_short"] == "New caption"
+    mock_regenerate.assert_called_once_with("img-1")
+    mock_audit.assert_called_once()
+    assert mock_audit.call_args.kwargs["action"] == "regenerate_caption"
+
+
+@patch("imagecb.repair.regenerate_caption")
+def test_regenerate_caption_not_found(mock_regenerate, admin_client):
+    mock_regenerate.side_effect = ValueError("image not found")
+    res = admin_client.post(
+        "/api/admin/images/missing/regenerate-caption",
+        headers={"X-Admin-Api-Key": "test-admin-secret"},
+    )
+    assert res.status_code == 404
+
+
+@patch("imagecb.admin.routes.audit.append_audit")
+@patch("imagecb.repair.reindex_image")
+def test_reindex_endpoint(mock_reindex, mock_audit, admin_client):
+    mock_reindex.return_value = {
+        "image_id": "img-1",
+        "reindexed": True,
+        "caption_short": "Stored caption",
+        "caption_quality": "ok",
+    }
+    res = admin_client.post(
+        "/api/admin/images/img-1/reindex",
+        headers={"X-Admin-Api-Key": "test-admin-secret"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["reindexed"] is True
+    mock_reindex.assert_called_once_with("img-1")
+    mock_audit.assert_called_once()
+    assert mock_audit.call_args.kwargs["action"] == "reindex"
+
+
+@patch("imagecb.repair.reindex_image")
+def test_reindex_not_found(mock_reindex, admin_client):
+    mock_reindex.side_effect = ValueError("image not found")
+    res = admin_client.post(
+        "/api/admin/images/missing/reindex",
+        headers={"X-Admin-Api-Key": "test-admin-secret"},
+    )
+    assert res.status_code == 404

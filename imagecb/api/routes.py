@@ -39,6 +39,7 @@ from imagecb.api.schemas import (
 )
 from imagecb.api.sessions import get_or_create_session, get_session, reset_session
 from imagecb.config import SETTINGS
+from imagecb.caption.quality import needs_regeneration
 from imagecb.formatting.assistant_reply import (
     _display_caption,
     build_result_cards,
@@ -107,6 +108,8 @@ def _result_card_from_dict(d: dict) -> ResultCardOut:
         source_url=d.get("source_url"),
         source_location=str(d.get("source_location", "")),
         source_path=d.get("source_path"),
+        caption_quality=str(d.get("caption_quality", "ok")),
+        needs_regeneration=bool(d.get("needs_regeneration", False)),
     )
 
 
@@ -164,6 +167,8 @@ def _result_card_out(card) -> ResultCardOut:
         source_url=card.source_url,
         source_location=card.source_location,
         source_path=card.source_path,
+        caption_quality=card.caption_quality,
+        needs_regeneration=card.needs_regeneration,
     )
 
 
@@ -190,9 +195,14 @@ def status() -> StatusResponse:
 
 
 @router.post("/suggestions", response_model=SuggestionsResponse)
-def suggestions(body: SuggestionsRequest) -> SuggestionsResponse:
+def suggestions(
+    body: SuggestionsRequest,
+    user_id: str = Depends(resolve_user_id),
+) -> SuggestionsResponse:
     result = generate_suggestions(
         body.recent_titles,
+        recent_queries=body.recent_queries,
+        user_id=user_id,
         limit=body.limit,
     )
     return SuggestionsResponse(
@@ -437,13 +447,6 @@ async def similar(
     if not ref_id and upload_image is None:
         raise HTTPException(status_code=400, detail="image_id or image file is required")
 
-    restrict_to: Optional[List[str]] = None
-    if sid:
-        session = get_session(sid)
-        if session is not None and session.last_candidate_ids and session.last_spec is not None:
-            if session.last_spec.is_refinement:
-                restrict_to = list(session.last_candidate_ids)
-
     try:
         outcome = search_similar(
             image_id=ref_id,
@@ -452,7 +455,6 @@ async def similar(
             exclude_image_id=ref_id,
             min_match_percent=min_pct,
             similarity_axis=axis,
-            restrict_to=restrict_to,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -476,7 +478,13 @@ async def similar(
 
     notes = [
         f"Blended visual similarity with text search ({axis_label(parsed_axis)}).",
-        f"Generated query: {facets.search_query}" if facets.search_query else "",
+        (
+            f"Generated query: {facets.search_query}"
+            if facets.is_usable() and facets.search_query
+            else "Visual similarity only (image query unavailable)."
+            if not facets.is_usable()
+            else ""
+        ),
         f"Showing visual matches at or above {min_pct}%." if min_pct > 0 else "",
     ]
     notes = [n for n in notes if n]
@@ -571,6 +579,7 @@ def corpus_catalog(limit: int = 40) -> CorpusCatalogResponse:
     for r in records:
         image_name, use_case, tags, recommended, theme, aliases = catalog_fields_from_record(r)
         prov = provenance_from_record(r)
+        quality = (r.caption_quality or "ok").lower()
         items.append(
             CatalogItemOut(
                 image_id=r.image_id,
@@ -583,6 +592,8 @@ def corpus_catalog(limit: int = 40) -> CorpusCatalogResponse:
                 aliases=aliases,
                 caption=_display_caption(r),
                 source_name=prov.source_name,
+                caption_quality=quality,
+                needs_regeneration=needs_regeneration(quality),
             )
         )
     try:

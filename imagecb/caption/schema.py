@@ -20,6 +20,7 @@ CAPTION_JSON_SCHEMA: Dict[str, Any] = {
                 "objects": {
                     "type": "array",
                     "items": {"type": "string"},
+                    "minItems": 1,
                     "description": "Salient visible objects/entities only.",
                 },
                 "scene": {
@@ -67,16 +68,21 @@ CAPTION_JSON_SCHEMA: Dict[str, Any] = {
                 "tags": {
                     "type": "array",
                     "items": {"type": "string"},
+                    "minItems": 3,
+                    "maxItems": 10,
                     "description": "3-10 lowercase tags; prefer corpus vocabulary on full literal match.",
                 },
                 "recommended_cases": {
                     "type": "array",
                     "items": {"type": "string"},
+                    "minItems": 3,
+                    "maxItems": 6,
                     "description": "3-6 natural-language queries a searcher would type (primary retrieval field).",
                 },
                 "aliases": {
                     "type": "array",
                     "items": {"type": "string"},
+                    "minItems": 2,
                     "description": "Synonyms, acronym expansions (e.g. sdlc: software development life cycle), alternate phrasings.",
                 },
             },
@@ -106,10 +112,18 @@ def validate_caption_dict(data: dict) -> bool:
             return False
     if not isinstance(g["objects"], list) or not isinstance(g["text_read_uncertain"], bool):
         return False
+    if len(g["objects"]) < 1:
+        return False
     for key in ("theme", "use_case", "short_caption", "detailed_description"):
         if key not in i:
             return False
     for key in ("tags", "recommended_cases", "aliases"):
         if key not in s or not isinstance(s[key], list):
             return False
+    if not (3 <= len(s["tags"]) <= 10):
+        return False
+    if not (3 <= len(s["recommended_cases"]) <= 6):
+        return False
+    if len(s["aliases"]) < 2:
+        return False
     return True

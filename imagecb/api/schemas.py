@@ -35,6 +35,8 @@ class ResultCardOut(BaseModel):
     source_url: Optional[str] = None
     source_location: str = ""
     source_path: Optional[str] = None
+    caption_quality: str = "ok"
+    needs_regeneration: bool = False
 
 
 class CatalogItemOut(BaseModel):
@@ -48,6 +50,8 @@ class CatalogItemOut(BaseModel):
     aliases: List[str] = Field(default_factory=list)
     caption: str = ""
     source_name: str = ""
+    caption_quality: str = "ok"
+    needs_regeneration: bool = False
 
 
 class CorpusCatalogResponse(BaseModel):
@@ -130,6 +134,7 @@ class SessionResetResponse(BaseModel):
 
 class SuggestionsRequest(BaseModel):
     recent_titles: List[str] = Field(default_factory=list, max_length=20)
+    recent_queries: List[str] = Field(default_factory=list, max_length=20)
     limit: int = Field(default=4, ge=2, le=8)
 
 

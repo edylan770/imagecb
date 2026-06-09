@@ -104,3 +104,26 @@ export function recentChatTitles(
   }
   return out;
 }
+
+/** Recent user search texts across conversations for dynamic empty-state suggestions. */
+export function recentUserQueries(
+  conversations: Conversation[],
+  limit = 8,
+): string[] {
+  const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const c of sorted) {
+    const turns = [...c.turns].reverse();
+    for (const turn of turns) {
+      const q = turn.userContent.trim();
+      if (!q) continue;
+      const key = q.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(q);
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}

@@ -21,9 +21,13 @@ if TYPE_CHECKING:
     from imagecb.extractors.types import ExtractedImage
 
 
-def _apply_normalized_tags(caption: CaptionJSON, vocab: Set[str]) -> CaptionJSON:
+def _apply_normalized_tags(
+    caption: CaptionJSON,
+    vocab: Set[str],
+    lexicon: SearchLexicon,
+) -> CaptionJSON:
     raw = list(caption.search.tags)
-    normalized = normalize_tags(raw, vocab)
+    normalized = normalize_tags(raw, vocab, lexicon=lexicon)
     caption.search.tags = normalized
     return caption
 
@@ -66,6 +70,7 @@ def generate_caption(
     source_file = extracted.provenance.source_file
 
     def _run() -> CaptionJSON:
+        lexicon = build_search_lexicon()
         cap = captioner.caption_image(
             extracted.image,
             max_side=max_side,
@@ -74,8 +79,8 @@ def generate_caption(
         )
         if cap.short_caption == "[caption failed]":
             return cap
-        cap = _apply_normalized_tags(cap, vocab)
-        cap = _enrich_search_terms(cap, build_search_lexicon())
+        cap = _apply_normalized_tags(cap, vocab, lexicon)
+        cap = _enrich_search_terms(cap, lexicon)
         quality = assess_caption(cap)
         cap.caption_quality = quality
         return cap

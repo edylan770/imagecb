@@ -11,10 +11,11 @@ import base64
 import io
 import json
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from PIL import Image
 
+from imagecb.caption.examples import format_few_shot_for_prompt
 from imagecb.caption.schema import (
     CAPTION_JSON_SCHEMA,
     CAPTION_TOOL_NAME,
@@ -53,9 +54,13 @@ CAPTION_USER_PROMPT_TEMPLATE = (
     "text_read_uncertain (true if text is partial/illegible)\n"
     "- interpretive: theme, use_case, short_caption (<= 20 words), detailed_description "
     "(1-3 sentences, catalog prose only)\n"
-    "- search: tags (3-10 lowercase), recommended_cases (3-6 natural queries a searcher "
-    "would type — primary retrieval field), aliases (synonyms, acronym expansions like "
-    "'sdlc: software development life cycle', and alternate phrasings)"
+    "- search: tags (3-10 lowercase singular words), recommended_cases (3-6 natural "
+    "queries a searcher would type — primary retrieval field), aliases (synonyms, "
+    "acronym expansions like 'sdlc: software development life cycle', and alternate "
+    "phrasings)\n\n"
+    "Style reference — match this granularity exactly (tags: lowercase singular words; "
+    "search fields as user queries):\n"
+    "{examples_block}"
 )
 
 QUERY_SYSTEM_PROMPT = (
@@ -239,10 +244,28 @@ class ImageQueryJSON:
     salient_objects: List[str] = field(default_factory=list)
     visible_text: str = ""
     colors_mood: str = ""
+    query_quality: str = "ok"
+    error_message: str = ""
 
     @classmethod
     def empty(cls) -> "ImageQueryJSON":
         return cls()
+
+    @classmethod
+    def failed(cls, message: str) -> "ImageQueryJSON":
+        return cls(query_quality="failed", error_message=message)
+
+    def is_usable(self) -> bool:
+        if self.query_quality != "ok":
+            return False
+        return bool(
+            self.search_query.strip()
+            or self.subject.strip()
+            or self.style.strip()
+            or self.layout.strip()
+            or self.salient_objects
+            or self.visible_text.strip()
+        )
 
     @classmethod
     def from_dict(cls, d: dict) -> "ImageQueryJSON":
@@ -292,6 +315,20 @@ def _parse_json_lenient(text: str) -> Optional[dict]:
     return None
 
 
+def _accept_caption_payload(data: Any) -> Optional[dict]:
+    """Accept only complete caption payloads from structured provider output."""
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(data, dict):
+        return None
+    if validate_caption_dict(data):
+        return data
+    return None
+
+
 def _build_caption_user_prompt(
     *,
     context: Optional[str],
@@ -305,14 +342,8 @@ def _build_caption_user_prompt(
     return CAPTION_USER_PROMPT_TEMPLATE.format(
         context_block=context_block,
         vocab_block=vocab_block,
+        examples_block=format_few_shot_for_prompt(),
     )
-
-
-def _parse_structured_caption(raw: str) -> Optional[dict]:
-    data = _parse_json_lenient(raw)
-    if data and validate_caption_dict(data):
-        return data
-    return None
 
 
 def _extract_tool_input(response_content: list, tool_name: str) -> Optional[dict]:
@@ -321,13 +352,7 @@ def _extract_tool_input(response_content: list, tool_name: str) -> Optional[dict
             continue
         if block.get("toolUse", {}).get("name") == tool_name:
             inp = block["toolUse"].get("input")
-            if isinstance(inp, dict):
-                return inp
-            if isinstance(inp, str):
-                try:
-                    return json.loads(inp)
-                except json.JSONDecodeError:
-                    return None
+            return _accept_caption_payload(inp)
     return None
 
 
@@ -378,10 +403,13 @@ class VLMCaptioner:
             else:
                 raise ValueError(f"Unknown VLM provider: {self.provider}")
         except Exception as exc:  # noqa: BLE001
-            return ImageQueryJSON(search_query=f"[query failed: {exc}]")
+            return ImageQueryJSON.failed(str(exc))
 
         data = _parse_json_lenient(raw) or {}
-        return ImageQueryJSON.from_dict(data)
+        facets = ImageQueryJSON.from_dict(data)
+        if not facets.is_usable():
+            return ImageQueryJSON.failed("invalid or empty query response")
+        return facets
 
     def _caption_bedrock_structured(self, image: Image.Image, user_prompt: str) -> Optional[dict]:
         from imagecb.models.bedrock_client import bedrock_converse
@@ -417,12 +445,7 @@ class VLMCaptioner:
             },
         )
         content = response["output"]["message"]["content"]
-        data = _extract_tool_input(content, CAPTION_TOOL_NAME)
-        if data and validate_caption_dict(data):
-            return data
-        # Fallback: try text blocks
-        parts = [block.get("text", "") for block in content if "text" in block]
-        return _parse_structured_caption("".join(parts))
+        return _extract_tool_input(content, CAPTION_TOOL_NAME)
 
     def _caption_openai_structured(self, image: Image.Image, user_prompt: str) -> Optional[dict]:
         from openai import OpenAI
@@ -453,7 +476,7 @@ class VLMCaptioner:
             max_tokens=_CAPTION_MAX_TOKENS,
         )
         raw = resp.choices[0].message.content or "{}"
-        return _parse_structured_caption(raw)
+        return _accept_caption_payload(raw)
 
     def _caption_anthropic_structured(self, image: Image.Image, user_prompt: str) -> Optional[dict]:
         import anthropic
@@ -494,11 +517,8 @@ class VLMCaptioner:
         )
         for block in msg.content:
             if getattr(block, "type", None) == "tool_use" and block.name == CAPTION_TOOL_NAME:
-                inp = block.input
-                if isinstance(inp, dict) and validate_caption_dict(inp):
-                    return inp
-        parts = [b.text for b in msg.content if getattr(b, "type", None) == "text"]
-        return _parse_structured_caption("".join(parts))
+                return _accept_caption_payload(block.input)
+        return None
 
     def _invoke_vlm(
         self,

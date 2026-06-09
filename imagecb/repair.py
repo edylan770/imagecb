@@ -18,7 +18,13 @@ from tqdm import tqdm
 from imagecb.caption.context import caption_context_from_record
 from imagecb.caption.normalize import normalize_tags
 from imagecb.caption.pipeline import enrich_caption_search_terms
-from imagecb.caption.quality import CAPTION_FAILED, assess_caption
+from imagecb.caption.quality import (
+    CAPTION_FAILED,
+    assess_caption,
+    assess_caption_with_reasons,
+    caption_json_from_record,
+    needs_regeneration,
+)
 from imagecb.caption.vocab import load_tag_vocab
 from imagecb.config import SETTINGS
 from imagecb.ingest import _chroma_metadata, _flush_chroma_batch
@@ -42,6 +48,7 @@ class IndexHealthReport:
     failed_caption_records: List[ImageRecord] = field(default_factory=list)
     weak_caption_count: int = 0
     weak_caption_records: List[ImageRecord] = field(default_factory=list)
+    needs_regeneration_count: int = 0
     missing_chroma_count: int = 0
     missing_chroma_ids: List[str] = field(default_factory=list)
     unrecoverable_source_missing_count: int = 0
@@ -114,6 +121,8 @@ def assess_index_health(*, include_weak: bool = False) -> IndexHealthReport:
 
     missing_cache_count = len(missing_cache_records)
     failed_caption_count = len(failed_caption_records)
+    weak_caption_count = len(weak_caption_records)
+    needs_regeneration_count = failed_caption_count + weak_caption_count
     missing_chroma_count = len(missing_chroma_ids)
     is_healthy = (
         missing_cache_count == 0
@@ -141,8 +150,9 @@ def assess_index_health(*, include_weak: bool = False) -> IndexHealthReport:
         missing_cache_records=missing_cache_records,
         failed_caption_count=failed_caption_count,
         failed_caption_records=failed_caption_records,
-        weak_caption_count=len(weak_caption_records),
+        weak_caption_count=weak_caption_count,
         weak_caption_records=weak_caption_records,
+        needs_regeneration_count=needs_regeneration_count,
         missing_chroma_count=missing_chroma_count,
         missing_chroma_ids=missing_chroma_ids,
         unrecoverable_source_missing_count=len(unrecoverable_records),
@@ -201,21 +211,141 @@ def _apply_caption_to_record(record: ImageRecord, caption: CaptionJSON) -> None:
     record.caption_quality = caption.caption_quality or "ok"
 
 
+def _persist_record(record: ImageRecord) -> None:
+    with session_scope() as s:
+        s.merge(record)
+
+
+def _upsert_record_embedding(record: ImageRecord, embedding: np.ndarray) -> None:
+    if embedding.ndim == 1:
+        embedding = embedding.reshape(1, -1)
+    vector_store.upsert(
+        image_ids=[record.image_id],
+        embeddings=embedding,
+        metadatas=[_chroma_metadata(record)],
+    )
+
+
+def _apply_regenerated_caption(
+    record: ImageRecord,
+    caption: CaptionJSON,
+    *,
+    embedding: Optional[np.ndarray] = None,
+) -> None:
+    """Persist caption fields and optionally refresh the Chroma vector."""
+    _apply_caption_to_record(record, caption)
+    _persist_record(record)
+    if embedding is not None:
+        _upsert_record_embedding(record, embedding)
+
+
+def _caption_with_retry(record: ImageRecord, img: Image.Image) -> CaptionJSON:
+    caption = _caption_from_record(record, img)
+    if caption.caption_quality in ("weak", "failed"):
+        retry = _caption_from_record(record, img)
+        if retry.caption_quality == "ok" or (
+            retry.caption_quality == "weak" and caption.caption_quality == "failed"
+        ):
+            caption = retry
+        elif retry.caption_quality == "weak" and caption.caption_quality == "weak":
+            caption = retry
+    return caption
+
+
+def rescan_caption_quality(*, include_deleted: bool = False) -> dict:
+    """Re-assess stored captions and update caption_quality flags (no VLM)."""
+    t0 = time.perf_counter()
+    records = get_all_records(include_deleted=include_deleted)
+    stats = {
+        "scanned": 0,
+        "updated": 0,
+        "ok": 0,
+        "weak": 0,
+        "failed": 0,
+    }
+    for record in records:
+        stats["scanned"] += 1
+        cap = caption_json_from_record(record)
+        quality = assess_caption(cap)
+        stats[quality] += 1
+        prev = (record.caption_quality or "ok").lower()
+        if quality != prev:
+            record.caption_quality = quality
+            _persist_record(record)
+            stats["updated"] += 1
+    stats["elapsed_sec"] = round(time.perf_counter() - t0, 1)
+    return stats
+
+
+def regenerate_caption(image_id: str, *, rebuild_bm25: bool = True) -> dict:
+    """Re-caption one image, re-embed, and refresh BM25."""
+    from imagecb.storage.metadata_db import get_record
+
+    record = get_record(image_id)
+    if record is None:
+        raise ValueError("image not found")
+    img = _load_cached_image(record)
+    if img is None:
+        raise ValueError("cached image missing")
+
+    caption = _caption_with_retry(record, img)
+    _apply_caption_to_record(record, caption)
+    embedder = get_embedder()
+    ctx = embed_context_from_record(record)
+    emb = embedder.embed_image_with_context(img, ctx or None)
+    _persist_record(record)
+    _upsert_record_embedding(record, emb)
+    if rebuild_bm25:
+        bm25_index.rebuild_from_records(get_all_records())
+
+    _, reasons = assess_caption_with_reasons(caption)
+    quality = caption.caption_quality or "ok"
+    return {
+        "image_id": image_id,
+        "caption_quality": quality,
+        "needs_regeneration": needs_regeneration(quality),
+        "quality_reasons": reasons,
+        "caption_short": caption.short_caption,
+        "caption_detailed": caption.detailed_description,
+        "image_name": caption.image_name,
+        "tags": list(caption.tags),
+    }
+
+
+def reindex_image(image_id: str, *, rebuild_bm25: bool = True) -> dict:
+    """Re-embed one image from its stored caption and refresh search indexes."""
+    from imagecb.storage.metadata_db import get_record
+
+    record = get_record(image_id)
+    if record is None:
+        raise ValueError("image not found")
+    img = _load_cached_image(record)
+    if img is None:
+        raise ValueError("cached image missing")
+
+    embedder = get_embedder()
+    ctx = embed_context_from_record(record)
+    emb = embedder.embed_image_with_context(img, ctx or None)
+    _upsert_record_embedding(record, emb)
+    if rebuild_bm25:
+        bm25_index.rebuild_from_records(get_all_records())
+
+    quality = (record.caption_quality or "ok").lower()
+    return {
+        "image_id": image_id,
+        "reindexed": True,
+        "caption_short": record.caption_short,
+        "caption_quality": quality,
+    }
+
+
 def _repair_one_caption(record: ImageRecord) -> Tuple[str, bool, Optional[str]]:
     img = _load_cached_image(record)
     if img is None:
         return record.image_id, False, "cached image missing"
     try:
-        caption = _caption_from_record(record, img)
-        if caption.caption_quality in ("weak", "failed"):
-            retry = _caption_from_record(record, img)
-            if retry.caption_quality == "ok" or (
-                retry.caption_quality == "weak" and caption.caption_quality == "failed"
-            ):
-                caption = retry
-        _apply_caption_to_record(record, caption)
-        with session_scope() as s:
-            s.merge(record)
+        caption = _caption_with_retry(record, img)
+        _apply_regenerated_caption(record, caption)
         return record.image_id, True, None
     except Exception as exc:  # noqa: BLE001
         return record.image_id, False, str(exc)
@@ -266,13 +396,7 @@ def repair_failed_captions(
 
 
 def _record_to_caption_json(record: ImageRecord) -> CaptionJSON:
-    cap = CaptionJSON()
-    cap.image_name = record.image_name or ""
-    cap.interpretive.theme = record.theme or ""
-    cap.search.tags = metadata_db.deserialize_list(record.tags_json)
-    cap.search.recommended_cases = metadata_db.deserialize_list(record.recommended_cases_json)
-    cap.search.aliases = metadata_db.deserialize_list(record.search_aliases_json)
-    return cap
+    return caption_json_from_record(record)
 
 
 def repair_search_terms(*, rebuild_bm25: bool = True) -> dict:
@@ -454,6 +578,7 @@ def repair_index_issues(
         repair_missing_vectors = SETTINGS.post_ingest_repair_reindex_vectors
 
     t0 = time.perf_counter()
+    rescan_stats = rescan_caption_quality()
     report = assess_index_health(include_weak=include_weak_captions)
     if report.is_healthy:
         logger.info("Post-ingest repair skipped: index is healthy")
@@ -462,6 +587,7 @@ def repair_index_issues(
             "is_healthy": True,
             "elapsed_sec": round(time.perf_counter() - t0, 1),
             "assess": {"elapsed_sec": report.elapsed_sec},
+            "rescan": rescan_stats,
         }
 
     logger.info(
@@ -530,7 +656,9 @@ def repair_index_issues(
         "unrecoverable": phases.get("cache", {}).get("unrecoverable", 0),
         "remaining_missing_cache": final.missing_cache_count,
         "remaining_failed_captions": final.failed_caption_count,
+        "remaining_weak_captions": final.weak_caption_count,
         "remaining_missing_chroma": final.missing_chroma_count,
+        "rescan": rescan_stats,
     }
     logger.info(
         "Post-ingest repair done in %.1fs: recached=%s captions=%s vectors=%s healthy=%s",

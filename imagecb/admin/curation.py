@@ -21,6 +21,7 @@ from imagecb.storage.metadata_db import ImageRecord, get_all_records, session_sc
 from imagecb.telemetry.models import InteractionEvent, SearchEvent
 from imagecb.telemetry.schema import ensure_telemetry_schema
 from imagecb.admin.audit import append_audit
+from imagecb.caption.quality import needs_regeneration
 
 
 def rebuild_bm25_active() -> None:
@@ -120,6 +121,7 @@ def list_corpus_images() -> List[dict]:
     active = get_all_records(include_deleted=False)
     out: List[dict] = []
     for r in active:
+        quality = (r.caption_quality or "ok").lower()
         out.append(
             {
                 "image_id": r.image_id,
@@ -128,6 +130,8 @@ def list_corpus_images() -> List[dict]:
                 "source_type": r.source_type,
                 "author": r.author,
                 "image_url": f"/api/images/{r.image_id}",
+                "caption_quality": quality,
+                "needs_regeneration": needs_regeneration(quality),
             }
         )
     out.sort(key=lambda x: (x.get("source_file") or "", x["image_id"]))

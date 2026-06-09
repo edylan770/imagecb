@@ -37,11 +37,11 @@ query:   text + history -> LLM QuerySpec
 ```
 
 **Match % on result cards** is a calibrated display value derived from
-each hit's raw model score (Cohere rerank relevance for chat search,
-cosine similarity for small similar-image result sets). Ranking and the
-min-match slider still use raw scores. **100%** appears only for
-near-excellent raw scores (rerank ≥ 0.93, cosine ≥ 0.92); weaker but
-top-ranked results keep lower percentages.
+each hit's score. Chat search uses Cohere rerank relevance; similar-image
+search uses normalized RRF fusion across the visual and text lanes (rank,
+filter, and display all use the same fused score). **100%** appears for
+near-excellent rerank scores (≥ 0.93), dense cosine (≥ 0.92), or fusion
+scores at 1.0.
 
 ## Setup
 
@@ -398,7 +398,8 @@ API: `POST /api/deck/suggest` (multipart `.pptx`), `POST /api/deck/force` (JSON)
 #### Search features in the web UI
 
 - **Find similar** on any result card runs visual similarity search (no
-  query LLM).
+  query LLM). Axis buttons (balanced / subject / style / layout) change both
+  the text query focus and the visual-vs-text fusion weight.
 - **Camera** in the composer uploads a reference image for similarity
   search.
 - **Open source** downloads the original `.pptx`, `.pdf`, or image file;
@@ -429,6 +430,38 @@ Try queries like:
 python -m imagecb.cli status
 python -m imagecb.cli parse-query "screenshots of dashboards from last quarter"
 ```
+
+### Search evaluation harness
+
+Offline tool for measuring whether retrieval tuning actually helps. Not a
+user-facing feature — run it locally against your ingested `./data` index
+with Bedrock credentials.
+
+1. **Label cases** in [`eval/golden.json`](eval/golden.json). Each text case
+   maps a query to `relevant_ids`; each similar case maps a reference
+   `image_id` to expected neighbors. Set `"template": false` once IDs are
+   real. Starter entries are templates only.
+
+2. **Discover image IDs** to label:
+
+```powershell
+python -m imagecb.cli eval-suggest "operational dashboards" --top-k 15
+python -m imagecb.cli eval-suggest "operational dashboards" --mode chat
+python -m imagecb.cli eval-suggest --similar <image_id> --axis style
+```
+
+3. **Run eval** (reports separate scoreboards for chat, retrieval-only, and
+   similar search):
+
+```powershell
+python -m imagecb.cli eval-search
+python -m imagecb.cli eval-search --mode retrieval --k 1,5,10
+python -m imagecb.cli eval-search --case-id dashboard-screenshots --failures-only
+python -m imagecb.cli eval-search --json-out runs/baseline.json
+```
+
+While drafting cases, `--skip-id-validation` skips the SQLite ID check.
+Compare before/after tuning runs via `--json-out`.
 
 ## Configuration
 

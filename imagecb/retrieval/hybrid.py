@@ -62,18 +62,34 @@ def rrf_merge(
     dense: List[tuple[str, float]],
     sparse: List[tuple[str, float]],
     k: int,
+    *,
+    dense_weight: float = 1.0,
+    sparse_weight: float = 1.0,
 ) -> List[Candidate]:
     """Reciprocal Rank Fusion. Returns candidates sorted by fused score desc."""
     cands: Dict[str, Candidate] = {}
     for rank, (image_id, score) in enumerate(dense, start=1):
         c = cands.setdefault(image_id, Candidate(image_id=image_id))
         c.dense_score = score
-        c.fused_score += 1.0 / (k + rank)
+        c.fused_score += dense_weight / (k + rank)
     for rank, (image_id, score) in enumerate(sparse, start=1):
         c = cands.setdefault(image_id, Candidate(image_id=image_id))
         c.sparse_score = score
-        c.fused_score += 1.0 / (k + rank)
+        c.fused_score += sparse_weight / (k + rank)
     return sorted(cands.values(), key=lambda c: c.fused_score, reverse=True)
+
+
+def normalize_rrf_score(
+    fused_score: float,
+    k: int,
+    *,
+    weight_sum: float,
+) -> float:
+    """Map raw RRF sum to [0, 1] using theoretical max for active lane weights."""
+    if weight_sum <= 0 or fused_score <= 0:
+        return 0.0
+    max_score = weight_sum / (k + 1)
+    return min(1.0, fused_score / max_score)
 
 
 def search(

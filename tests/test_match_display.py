@@ -39,3 +39,9 @@ def test_score_kind_string():
 
 def test_rerank_087_calibrated_for_cards():
     assert display_match_percent(0.87, ScoreKind.RERANK) == 94
+
+
+def test_fusion_linear_display():
+    assert display_match_percent(0.5, ScoreKind.FUSION) == 50
+    assert display_match_percent(1.0, ScoreKind.FUSION) == 100
+    assert display_match_percent(0.0, ScoreKind.FUSION) == 0
