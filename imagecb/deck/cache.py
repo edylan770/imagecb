@@ -8,7 +8,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import List, Optional, Sequence
 
 from imagecb.config import SETTINGS
 from imagecb.deck.llm import SlideLLMOutput

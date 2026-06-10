@@ -40,7 +40,7 @@ from imagecb.ingest_context import embed_context_from_caption_and_provenance
 from imagecb.models.embedder import BedrockEmbedder, get_embedder
 from imagecb.models.ocr import extract_text as ocr_extract
 from imagecb.models.vlm import CaptionJSON, VLMCaptioner, get_captioner
-from imagecb.storage import bm25_index, metadata_db, vector_store
+from imagecb.storage import bm25_index, vector_store
 from imagecb.storage.metadata_db import (
     ImageRecord,
     existing_hashes,

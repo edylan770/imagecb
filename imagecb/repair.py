@@ -478,13 +478,10 @@ def _record_to_caption_json(record: ImageRecord) -> CaptionJSON:
 
 
 def repair_search_terms(*, rebuild_bm25: bool = True) -> dict:
-    """Re-enrich aliases and recommended_cases from stored tags (no VLM)."""
-    from imagecb.caption.lexicon import refresh_lexicon_cache
-
+    """Re-clean aliases and recommended_cases from stored captions (no VLM)."""
     t0 = time.perf_counter()
     records = get_all_records()
     updated = 0
-    refresh_lexicon_cache()
 
     for record in records:
         if _caption_failed(record):

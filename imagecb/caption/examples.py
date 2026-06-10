@@ -110,7 +110,7 @@ CAPTION_FEW_SHOT_EXAMPLES: List[Tuple[str, Dict[str, Any]]] = [
                 "aliases": [
                     "revenue",
                     "Q3 results",
-                    "kpi: key performance indicator",
+                    "key performance indicator",
                 ],
             },
         },

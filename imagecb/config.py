@@ -112,13 +112,6 @@ class Settings:
     suggestions_limit: int = field(
         default_factory=lambda: int(_env("SUGGESTIONS_LIMIT", "4") or "4")
     )
-    acronym_cache_path: Path = field(
-        default_factory=lambda: _abspath(
-            _env("ACRONYM_CACHE_PATH")
-            or str(_abspath(_env("DATA_DIR", "./data") or "./data") / "acronym_cache.json")
-        )
-    )
-
     # Ingest performance
     ingest_workers: int = field(
         default_factory=lambda: int(_env("INGEST_WORKERS", "4") or "4")

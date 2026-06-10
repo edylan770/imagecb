@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from imagecb.config import SETTINGS
 from imagecb.retrieval.hybrid import Candidate, SearchOutcome
 from imagecb.retrieval.query_parser import QuerySpec, SourceFilters
-from imagecb.retrieval.session import ChatSession, _merge_filters
+from imagecb.retrieval.session import ChatSession
 
 
 def _spec(
@@ -21,25 +22,6 @@ def _spec(
         is_refinement=is_refinement,
         source_filters=SourceFilters(filename_contains=filename_contains or []),
     )
-
-
-def test_merge_filters_only_when_refinement_turn():
-    prev = _spec(filename_contains=["Q3_Review.pptx"])
-    fresh = _spec(semantic_query="cybersecurity", is_refinement=False)
-    assert fresh.source_filters.filename_contains == []
-
-    refined = _spec(semantic_query="only charts", is_refinement=True)
-    merged = _merge_filters(prev, refined)
-    assert merged.source_filters.filename_contains == ["Q3_Review.pptx"]
-
-
-def test_merge_filters_carries_asset_types():
-    prev = QuerySpec(
-        source_filters=SourceFilters(asset_types=["photo"]),
-    )
-    refined = QuerySpec(semantic_query="team meetings", is_refinement=True)
-    merged = _merge_filters(prev, refined)
-    assert merged.source_filters.asset_types == ["photo"]
 
 
 @patch("imagecb.retrieval.session.rerank")
@@ -59,34 +41,12 @@ def test_fresh_turn_searches_full_corpus(mock_parse, mock_search, mock_rerank):
     session.ask("cybersecurity")
 
     mock_search.assert_called_once()
-    _, kwargs = mock_search.call_args
-    assert kwargs.get("restrict_to") is None
 
 
 @patch("imagecb.retrieval.session.rerank")
 @patch("imagecb.retrieval.session.search")
 @patch("imagecb.retrieval.session.parse_query")
-def test_refinement_turn_searches_full_corpus(mock_parse, mock_search, mock_rerank):
-    session = ChatSession()
-    session.last_candidate_ids = ["img-1", "img-2"]
-
-    mock_parse.return_value = _spec(semantic_query="only the charts", is_refinement=True)
-    mock_search.return_value = SearchOutcome(
-        candidates=[Candidate(image_id="img-1", fused_score=0.5)]
-    )
-    mock_rerank.return_value = []
-
-    session.ask("only the charts")
-
-    mock_search.assert_called_once()
-    _, kwargs = mock_search.call_args
-    assert kwargs.get("restrict_to") is None
-
-
-@patch("imagecb.retrieval.session.rerank")
-@patch("imagecb.retrieval.session.search")
-@patch("imagecb.retrieval.session.parse_query")
-def test_refinement_turn_does_not_merge_sticky_filters(mock_parse, mock_search, mock_rerank):
+def test_refinement_turn_does_not_carry_previous_filters(mock_parse, mock_search, mock_rerank):
     session = ChatSession()
     session.last_spec = _spec(filename_contains=["Q3_Review.pptx"])
     session.last_candidate_ids = ["img-1", "img-2"]
@@ -100,7 +60,6 @@ def test_refinement_turn_does_not_merge_sticky_filters(mock_parse, mock_search, 
     result = session.ask("only charts")
 
     assert result.spec.source_filters.filename_contains == []
-    assert result.sticky_merged is False
 
 
 @patch("imagecb.retrieval.session.rerank")
@@ -133,6 +92,33 @@ def test_ask_passes_min_match_percent_to_rerank(mock_parse, mock_search, mock_re
 @patch("imagecb.retrieval.session.rerank")
 @patch("imagecb.retrieval.session.search")
 @patch("imagecb.retrieval.session.parse_query")
+def test_ask_applies_default_relevance_floor(mock_parse, mock_search, mock_rerank):
+    from imagecb.retrieval.rerank import RankedResult
+
+    session = ChatSession()
+    mock_parse.return_value = _spec(semantic_query="cybersecurity")
+    mock_search.return_value = SearchOutcome(
+        candidates=[Candidate(image_id="img-1", fused_score=0.5)]
+    )
+    mock_rerank.return_value = [
+        RankedResult(
+            image_id="img-1",
+            score=0.9,
+            record=MagicMock(),
+            provenance_line="Slide 1",
+        )
+    ]
+
+    session.ask("cybersecurity")
+
+    assert mock_rerank.call_count == 1
+    _, kwargs = mock_rerank.call_args
+    assert kwargs.get("min_score") == SETTINGS.weak_result_score_threshold
+
+
+@patch("imagecb.retrieval.session.rerank")
+@patch("imagecb.retrieval.session.search")
+@patch("imagecb.retrieval.session.parse_query")
 def test_ask_relaxes_min_score_when_all_filtered(mock_parse, mock_search, mock_rerank):
     from imagecb.retrieval.rerank import RankedResult
 
@@ -153,36 +139,7 @@ def test_ask_relaxes_min_score_when_all_filtered(mock_parse, mock_search, mock_r
 
     assert mock_rerank.call_count == 2
     assert result.relaxed_min_score is True
-    assert result.filtered_by_min_score is True
     assert len(result.results) == 1
-
-
-def test_apply_similar_results_not_refinement():
-    from imagecb.retrieval.rerank import RankedResult
-
-    session = ChatSession()
-    spec = _spec(semantic_query="hero banner", is_refinement=True)
-    results = [
-        RankedResult(
-            image_id="img-1",
-            score=0.9,
-            record=MagicMock(),
-            provenance_line="Slide 1",
-        ),
-        RankedResult(
-            image_id="img-2",
-            score=0.8,
-            record=MagicMock(),
-            provenance_line="Slide 2",
-        ),
-    ]
-
-    session.apply_similar_results(results, spec=spec)
-
-    assert session.last_candidate_ids == ["img-1", "img-2"]
-    assert session.last_spec is not None
-    assert session.last_spec.is_refinement is False
-    assert session.last_spec.semantic_query == "hero banner"
 
 
 def test_apply_similar_results_not_refinement():

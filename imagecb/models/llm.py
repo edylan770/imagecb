@@ -9,59 +9,40 @@ responsible for validating and applying defaults.
 from __future__ import annotations
 
 import json
-from typing import List, Optional
+from typing import Optional
 
 from imagecb.config import SETTINGS
 
 
 QUERY_SYSTEM_PROMPT = """You translate a user's natural-language image search request \
-into a STRICT JSON search specification. Today's date is provided so you can resolve \
-relative times like "last quarter" or "in May". Return ONLY a JSON object with these keys:
+into a search specification. Today's date is provided so you can resolve relative times \
+like "last quarter". Return ONLY a JSON object with these keys:
 
 {
-  "semantic_query": string,                  // short phrase that captures what to retrieve
+  "semantic_query": string,                  // short phrase capturing what to retrieve
   "must_have_keywords": [string],            // optional, lowercase
   "must_avoid_keywords": [string],           // optional, lowercase
   "source_filters": {
     "file_types": [string],                  // any of: "pptx", "pdf", "image"
-    "asset_types": [string],                 // rarely used; see rules below
-    "filename_contains": [string],           // substrings to require in the source filename
-    "authors": [string]                      // author names
+    "asset_types": [string],                 // visual format, e.g. "photo", "diagram"
+    "filename_contains": [string],           // substrings required in the source filename
+    "authors": [string]
   },
-  "time_filter": {                           // ISO 8601 dates, omit fields you don't need
-    "before": string | null,
-    "after": string | null
-  },
+  "time_filter": {"before": string | null, "after": string | null},  // ISO 8601 dates
   "top_k": integer,                          // 1..50, default 10
-  "is_refinement": boolean                   // true if the user is refining the previous result set
+  "is_refinement": boolean                   // true if refining the previous result set
 }
 
 Rules:
-- Omit a filter by leaving its list empty or its value null.
-- Do not set source_filters (file_types, asset_types, filename_contains, authors) or time_filter
-  unless the user explicitly named a source constraint in this turn (e.g. "from Q3_Review.pptx",
-  "pptx only", "by Alice", "modified last month") or they appear in active filters from a prior
-  refinement.
-- Content words alone are NOT filters. Put them in semantic_query instead.
-  Examples:
-  - "diagram" -> semantic_query: "diagram", empty source_filters (NOT asset_types)
-  - "presentation" -> semantic_query: "presentation", empty source_filters (NOT file_types pptx)
-  - "flowchart" -> semantic_query: "flowchart", empty source_filters
-- Set asset_types ONLY when the user explicitly constrains visual format with filter language
-  (e.g. "only photos", "screenshots only", "just diagrams") — not when the query is only a topic.
-- Set file_types ONLY when the user names pptx, pdf, powerpoint, or image files as a source.
-- For "not charts" / "no diagrams", use must_avoid_keywords; do not use asset_types for negatives.
+- Keep semantic_query close to the user's wording.
+- Set source_filters or time_filter ONLY when the user explicitly states a constraint in
+  filter language ("from Q3_Review.pptx", "pdf only", "only photos", "by Alice",
+  "modified last month") or it carries over from active filters in a refinement.
+- Content words alone are not filters: "diagram" or "presentation" as a topic goes in
+  semantic_query, not asset_types or file_types.
+- For negations like "no charts", use must_avoid_keywords, never asset_types.
 - Treat phrases like "narrow it down", "only the ones with...", "from those" as refinements.
-- Never invent filenames or authors that the user did not mention or that aren't visible in history.
-- Keep semantic_query close to the user's wording."""
-
-
-ACRONYM_SYSTEM_PROMPT = (
-    "You expand acronyms and abbreviations for image search. "
-    "Return ONLY a JSON object: {\"expansion\": string}. "
-    "The expansion should be the full phrase in lowercase. "
-    "If you cannot expand the acronym, return {\"expansion\": \"\"}."
-)
+- Never invent filenames or authors not present in the request or history."""
 
 
 def _user_payload(
@@ -115,69 +96,6 @@ class QueryLLM:
         else:
             raise ValueError(f"Unknown LLM provider: {self.provider}")
         return _coerce_json(raw)
-
-    def expand_acronym(self, token: str, corpus_vocab: List[str]) -> str:
-        """Expand an unrecognized acronym using the query LLM."""
-        vocab_block = ", ".join(corpus_vocab[:50]) if corpus_vocab else "(empty)"
-        user_text = (
-            f"Acronym: {token}\n"
-            f"Corpus vocabulary (for context): {vocab_block}\n"
-            "Return the JSON object now."
-        )
-        if self.provider == "bedrock":
-            raw = self._expand_acronym_bedrock(user_text)
-        elif self.provider == "openai":
-            raw = self._expand_acronym_openai(user_text)
-        elif self.provider == "anthropic":
-            raw = self._expand_acronym_anthropic(user_text)
-        else:
-            return ""
-        data = _coerce_json(raw)
-        return str(data.get("expansion") or "").strip().lower()
-
-    def _expand_acronym_bedrock(self, user_text: str) -> str:
-        from imagecb.models.bedrock_client import get_bedrock_runtime
-
-        response = get_bedrock_runtime().converse(
-            modelId=self.model,
-            system=[{"text": ACRONYM_SYSTEM_PROMPT}],
-            messages=[{"role": "user", "content": [{"text": user_text}]}],
-            inferenceConfig={"temperature": 0.0, "maxTokens": 200},
-        )
-        parts = [
-            block.get("text", "")
-            for block in response["output"]["message"]["content"]
-            if "text" in block
-        ]
-        return "".join(parts) or "{}"
-
-    def _expand_acronym_openai(self, user_text: str) -> str:
-        from openai import OpenAI
-
-        client = OpenAI(api_key=SETTINGS.openai_api_key)
-        resp = client.chat.completions.create(
-            model=self.model,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": ACRONYM_SYSTEM_PROMPT},
-                {"role": "user", "content": user_text},
-            ],
-            temperature=0.0,
-        )
-        return resp.choices[0].message.content or "{}"
-
-    def _expand_acronym_anthropic(self, user_text: str) -> str:
-        import anthropic
-
-        client = anthropic.Anthropic(api_key=SETTINGS.anthropic_api_key)
-        msg = client.messages.create(
-            model=self.model,
-            max_tokens=200,
-            system=ACRONYM_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_text}],
-        )
-        parts = [b.text for b in msg.content if getattr(b, "type", None) == "text"]
-        return "".join(parts) or "{}"
 
     def _parse_bedrock(
         self,

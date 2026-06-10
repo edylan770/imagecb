@@ -2,17 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Set
+from typing import TYPE_CHECKING, List, Optional, Set
 
-from imagecb.caption.asset_type import normalize_asset_type
+from imagecb.caption.asset_type import ASSET_TYPE_SET, normalize_asset_type
 from imagecb.caption.context import caption_context_from_provenance
-from imagecb.caption.lexicon import (
-    SearchLexicon,
-    build_search_lexicon,
-    enrich_aliases_for_tags,
-    enrich_recommended_cases,
-    refresh_lexicon_cache,
-)
 from imagecb.caption.normalize import normalize_tags
 from imagecb.caption.quality import assess_caption
 from imagecb.caption.vocab import load_tag_vocab
@@ -21,40 +14,35 @@ from imagecb.models.vlm import CaptionJSON, VLMCaptioner
 if TYPE_CHECKING:
     from imagecb.extractors.types import ExtractedImage
 
-
-def _apply_normalized_tags(
-    caption: CaptionJSON,
-    vocab: Set[str],
-    lexicon: SearchLexicon,
-) -> CaptionJSON:
-    raw = list(caption.search.tags)
-    normalized = normalize_tags(raw, vocab, lexicon=lexicon)
-    caption.search.tags = normalized
-    return caption
+_MAX_ALIASES = 8
+_MAX_RECOMMENDED_CASES = 5
 
 
-def _enrich_search_terms(caption: CaptionJSON, lexicon: SearchLexicon) -> CaptionJSON:
-    """Add corpus-aligned aliases; dedupe and strip boilerplate from recommended_cases."""
-    tags = list(caption.search.tags)
-    caption.search.aliases = enrich_aliases_for_tags(
-        tags,
-        lexicon,
-        existing_aliases=list(caption.search.aliases),
-    )
-    caption.search.recommended_cases = enrich_recommended_cases(
-        tags,
-        caption.theme,
-        existing_cases=list(caption.search.recommended_cases),
-        lexicon=lexicon,
-        asset_type=caption.grounded.asset_type,
-    )
+def _dedupe_lower(items: List[str], *, limit: int) -> List[str]:
+    seen: set[str] = set()
+    out: List[str] = []
+    for item in items:
+        s = (item or "").strip().lower()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _clean_search_terms(caption: CaptionJSON) -> CaptionJSON:
+    """Dedupe aliases; dedupe recommended_cases and drop bare asset-type phrases."""
+    caption.search.aliases = _dedupe_lower(caption.search.aliases, limit=_MAX_ALIASES)
+    cases = _dedupe_lower(caption.search.recommended_cases, limit=_MAX_RECOMMENDED_CASES)
+    caption.search.recommended_cases = [c for c in cases if c not in ASSET_TYPE_SET]
     return caption
 
 
 def enrich_caption_search_terms(caption: CaptionJSON) -> CaptionJSON:
     """Public helper for repair-search-terms (no VLM re-call)."""
-    lexicon = build_search_lexicon()
-    return _enrich_search_terms(caption, lexicon)
+    return _clean_search_terms(caption)
 
 
 def generate_caption(
@@ -72,7 +60,6 @@ def generate_caption(
     source_file = extracted.provenance.source_file
 
     def _run() -> CaptionJSON:
-        lexicon = build_search_lexicon()
         cap = captioner.caption_image(
             extracted.image,
             max_side=max_side,
@@ -82,8 +69,8 @@ def generate_caption(
         if cap.short_caption == "[caption failed]":
             return cap
         cap.grounded.asset_type = normalize_asset_type(cap.grounded.asset_type)
-        cap = _apply_normalized_tags(cap, vocab, lexicon)
-        cap = _enrich_search_terms(cap, lexicon)
+        cap.search.tags = normalize_tags(list(cap.search.tags), vocab)
+        cap = _clean_search_terms(cap)
         quality = assess_caption(cap)
         cap.caption_quality = quality
         return cap
@@ -102,9 +89,8 @@ def generate_caption(
 
 
 def refresh_vocab_cache() -> Set[str]:
-    """Rebuild in-memory vocab and lexicon after ingest batch."""
+    """Rebuild in-memory tag vocab after an ingest batch."""
     from imagecb.caption import vocab as vocab_mod
 
     vocab_mod._vocab_cache = None  # noqa: SLF001
-    refresh_lexicon_cache()
     return set(load_tag_vocab(refresh=True))

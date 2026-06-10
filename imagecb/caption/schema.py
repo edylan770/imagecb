@@ -96,7 +96,7 @@ CAPTION_JSON_SCHEMA: Dict[str, Any] = {
                     "type": "array",
                     "items": {"type": "string"},
                     "minItems": 2,
-                    "description": "Synonyms, acronym expansions (e.g. sdlc: software development life cycle), alternate phrasings.",
+                    "description": "Alternate names, synonyms, or spelled-out acronyms a searcher might use.",
                 },
             },
             "required": ["tags", "recommended_cases", "aliases"],

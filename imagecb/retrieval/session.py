@@ -2,7 +2,7 @@
 
 Tracks chat history, the last QuerySpec, and the last ranked results for
 follow-up query parsing context. Each search runs parse_query -> hybrid -> rerank
-over the full active corpus (no refinement pool restriction).
+over the full active corpus.
 """
 
 from __future__ import annotations
@@ -10,12 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
+from imagecb.config import SETTINGS
 from imagecb.retrieval.hybrid import search
 from imagecb.retrieval.query_build import rerank_query_text, resolve_rerank_top_n
 from imagecb.retrieval.query_parser import (
     QuerySpec,
-    SourceFilters,
-    TimeFilter,
     build_session_context,
     parse_query,
     summarize_history,
@@ -23,69 +22,12 @@ from imagecb.retrieval.query_parser import (
 from imagecb.retrieval.rerank import RankedResult, rerank
 
 
-def _merge_filters(prev: QuerySpec, new: QuerySpec) -> QuerySpec:
-    """Carry forward sticky filters from `prev` if `new` doesn't set them."""
-    sf_new = new.source_filters
-    sf_prev = prev.source_filters
-    merged_sf = SourceFilters(
-        file_types=sf_new.file_types or list(sf_prev.file_types),
-        asset_types=sf_new.asset_types or list(sf_prev.asset_types),
-        filename_contains=sf_new.filename_contains or list(sf_prev.filename_contains),
-        authors=sf_new.authors or list(sf_prev.authors),
-    )
-    tf_new = new.time_filter
-    tf_prev = prev.time_filter
-    merged_tf = TimeFilter(
-        before=tf_new.before or tf_prev.before,
-        after=tf_new.after or tf_prev.after,
-    )
-    new.source_filters = merged_sf
-    new.time_filter = merged_tf
-    return new
-
-
-def _filters_were_merged(prev: QuerySpec, merged: QuerySpec) -> bool:
-    """True if sticky carry-forward changed source/time filters."""
-    sf_prev, sf = prev.source_filters, merged.source_filters
-    tf_prev, tf = prev.time_filter, merged.time_filter
-    if sf.file_types != sf_prev.file_types and sf_prev.file_types:
-        return True
-    if sf.asset_types != sf_prev.asset_types and sf_prev.asset_types:
-        return True
-    if sf.filename_contains != sf_prev.filename_contains and sf_prev.filename_contains:
-        return True
-    if sf.authors != sf_prev.authors and sf_prev.authors:
-        return True
-    if tf.after != tf_prev.after and tf_prev.after:
-        return True
-    if tf.before != tf_prev.before and tf_prev.before:
-        return True
-    return False
-
-
-def has_metadata_filters(spec: QuerySpec) -> bool:
-    sf = spec.source_filters
-    tf = spec.time_filter
-    return bool(
-        sf.file_types
-        or sf.asset_types
-        or sf.filename_contains
-        or sf.authors
-        or tf.before
-        or tf.after
-    )
-
-
 @dataclass
 class AskResult:
     spec: QuerySpec
     results: List[RankedResult]
-    applied_refinement_pool: bool = False
-    pool_size: int = 0
-    sticky_merged: bool = False
     min_match_percent: int = 0
     candidate_count: int = 0
-    filtered_by_min_score: bool = False
     relaxed_min_score: bool = False
     dense_failed: bool = False
     sparse_failed: bool = False
@@ -117,18 +59,16 @@ class ChatSession:
         session_ctx = build_session_context(self.last_spec, self.last_results)
         spec = parse_query(text, history_summary, session_context=session_ctx)
 
-        sticky_merged = False
-
         if top_k is not None:
             spec.top_k = max(1, min(int(top_k), 50))
 
-        min_score = max(0.0, min(float(min_match_percent) / 100.0, 1.0))
+        # Without a floor, results are padded to top_k with low-scoring
+        # candidates that are unrelated to the query. When the user has not
+        # set an explicit minimum, drop the irrelevant tail instead.
+        user_min = max(0.0, min(float(min_match_percent) / 100.0, 1.0))
+        min_score = user_min if user_min > 0 else SETTINGS.weak_result_score_threshold
 
-        pool_size = len(self.last_candidate_ids)
-        applied_pool = False
-        restrict_to: Optional[List[str]] = None
-
-        outcome = search(spec, restrict_to=restrict_to)
+        outcome = search(spec)
         candidates = outcome.candidates
         query_for_rerank = rerank_query_text(spec, text)
 
@@ -141,9 +81,7 @@ class ChatSession:
             spec=spec,
         )
         relaxed_min_score = False
-        filtered_by_min_score = False
-        if not results and candidates and min_score > 0:
-            filtered_by_min_score = True
+        if not results and candidates:
             results = rerank(
                 query_for_rerank,
                 candidates,
@@ -168,12 +106,8 @@ class ChatSession:
         return AskResult(
             spec=spec,
             results=results,
-            applied_refinement_pool=applied_pool,
-            pool_size=pool_size,
-            sticky_merged=sticky_merged,
             min_match_percent=min_match_percent,
             candidate_count=len(candidates),
-            filtered_by_min_score=filtered_by_min_score,
             relaxed_min_score=relaxed_min_score,
             dense_failed=outcome.dense_failed,
             sparse_failed=outcome.sparse_failed,
@@ -207,7 +141,6 @@ class ChatSession:
             time_filter=spec.time_filter,
             top_k=spec.top_k,
             is_refinement=False,
-            expanded_keywords=list(spec.expanded_keywords),
         )
         self.last_spec = merged
 

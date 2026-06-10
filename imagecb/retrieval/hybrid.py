@@ -187,21 +187,3 @@ def search(
         dense_failed=dense_failed,
         sparse_failed=sparse_failed,
     )
-
-
-def search_candidates(
-    spec: QuerySpec,
-    *,
-    restrict_to: Optional[Sequence[str]] = None,
-    dense_top_k: Optional[int] = None,
-    sparse_top_k: Optional[int] = None,
-    rrf_k: Optional[int] = None,
-) -> List[Candidate]:
-    """Backward-compatible wrapper returning only the candidate list."""
-    return search(
-        spec,
-        restrict_to=restrict_to,
-        dense_top_k=dense_top_k,
-        sparse_top_k=sparse_top_k,
-        rrf_k=rrf_k,
-    ).candidates

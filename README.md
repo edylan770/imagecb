@@ -516,7 +516,7 @@ imagecb/
     query_parser.py      (text -> QuerySpec)
     hybrid.py            (filter + dense + sparse + RRF)
     rerank.py            (Bedrock rerank + provenance formatting)
-    session.py           (multi-turn state, sticky filters, refinement)
+    session.py           (multi-turn state and follow-up context)
   web/
     frontend_dist/       (pre-built React UI for serve-web — chat + admin)
     static/              (fallback vanilla chat UI)
