@@ -9,7 +9,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Sequence, Set, Tuple
+from typing import List, Literal, Optional, Sequence, Set, Tuple
 
 import numpy as np
 from PIL import Image
@@ -54,6 +54,8 @@ class IndexHealthReport:
     unrecoverable_source_missing_count: int = 0
     unrecoverable_records: List[ImageRecord] = field(default_factory=list)
     recoverable_source_files: List[str] = field(default_factory=list)
+    missing_asset_type_count: int = 0
+    missing_asset_type_ids: List[str] = field(default_factory=list)
     is_healthy: bool = True
     elapsed_sec: float = 0.0
 
@@ -90,6 +92,15 @@ def records_needing_regen(*, include_weak: bool = False) -> List[ImageRecord]:
     return records
 
 
+def records_missing_asset_type() -> List[ImageRecord]:
+    """Active rows without a stored visual asset type."""
+    return [
+        r
+        for r in get_all_records()
+        if not (r.asset_type or "").strip()
+    ]
+
+
 def assess_index_health(*, include_weak: bool = False) -> IndexHealthReport:
     """Read-only scan of SQLite, cache files, and Chroma for known issue classes."""
     t0 = time.perf_counter()
@@ -124,6 +135,9 @@ def assess_index_health(*, include_weak: bool = False) -> IndexHealthReport:
     weak_caption_count = len(weak_caption_records)
     needs_regeneration_count = failed_caption_count + weak_caption_count
     missing_chroma_count = len(missing_chroma_ids)
+    missing_asset_type_records = records_missing_asset_type()
+    missing_asset_type_count = len(missing_asset_type_records)
+    missing_asset_type_ids = [r.image_id for r in missing_asset_type_records[:50]]
     is_healthy = (
         missing_cache_count == 0
         and failed_caption_count == 0
@@ -133,12 +147,13 @@ def assess_index_health(*, include_weak: bool = False) -> IndexHealthReport:
     elapsed = round(time.perf_counter() - t0, 2)
     logger.info(
         "Index health assess: records=%s healthy=%s missing_cache=%s failed_captions=%s "
-        "missing_chroma=%s unrecoverable=%s (%.2fs)",
+        "missing_chroma=%s missing_asset_types=%s unrecoverable=%s (%.2fs)",
         len(records),
         is_healthy,
         missing_cache_count,
         failed_caption_count,
         missing_chroma_count,
+        missing_asset_type_count,
         len(unrecoverable_records),
         elapsed,
     )
@@ -158,6 +173,8 @@ def assess_index_health(*, include_weak: bool = False) -> IndexHealthReport:
         unrecoverable_source_missing_count=len(unrecoverable_records),
         unrecoverable_records=unrecoverable_records,
         recoverable_source_files=sorted(recoverable_source_files),
+        missing_asset_type_count=missing_asset_type_count,
+        missing_asset_type_ids=missing_asset_type_ids,
         is_healthy=is_healthy,
         elapsed_sec=elapsed,
     )
@@ -209,6 +226,7 @@ def _apply_caption_to_record(record: ImageRecord, caption: CaptionJSON) -> None:
     record.recommended_cases_json = metadata_db.serialize_list(caption.recommended_cases)
     record.search_aliases_json = metadata_db.serialize_list(caption.aliases)
     record.caption_quality = caption.caption_quality or "ok"
+    record.asset_type = caption.asset_type or None
 
 
 def _persist_record(record: ImageRecord) -> None:
@@ -355,16 +373,25 @@ def repair_failed_captions(
     *,
     workers: Optional[int] = None,
     include_weak: bool = False,
+    scope: Optional[Literal["failed", "weak", "failed_and_weak"]] = None,
     rebuild_bm25: bool = True,
 ) -> dict:
     """Re-caption rows where VLM failed or quality is weak."""
     workers = max(1, workers if workers is not None else SETTINGS.ingest_workers)
-    records = records_needing_regen(include_weak=include_weak)
+    if scope == "weak":
+        records = records_with_weak_captions()
+    elif scope == "failed":
+        records = records_with_failed_captions()
+    elif scope == "failed_and_weak":
+        records = records_needing_regen(include_weak=True)
+    else:
+        records = records_needing_regen(include_weak=include_weak)
     stats = {
         "attempted": len(records),
         "repaired": 0,
         "errors": 0,
         "include_weak": include_weak,
+        "scope": scope,
         "workers": workers,
     }
     if not records:
@@ -390,6 +417,57 @@ def repair_failed_captions(
                     logger.warning("Caption repair failed for %s: %s", _id, err)
 
     if rebuild_bm25:
+        bm25_index.rebuild_from_records(get_all_records())
+    stats["elapsed_sec"] = round(time.perf_counter() - t0, 1)
+    return stats
+
+
+def backfill_asset_types(
+    *,
+    workers: Optional[int] = None,
+    dry_run: bool = False,
+    rebuild_bm25: bool = True,
+    all_rows: bool = False,
+) -> dict:
+    """Re-caption rows to populate asset_type from cached PNGs (no re-upload)."""
+    workers = max(1, workers if workers is not None else SETTINGS.ingest_workers)
+    records = get_all_records() if all_rows else records_missing_asset_type()
+    stats = {
+        "scanned": len(records),
+        "updated": 0,
+        "skipped": 0,
+        "errors": 0,
+        "dry_run": dry_run,
+        "all_rows": all_rows,
+        "workers": workers,
+    }
+    if not records:
+        return stats
+
+    if dry_run:
+        stats["skipped"] = len(records)
+        return stats
+
+    t0 = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_repair_one_caption, r): r for r in records}
+        pbar = tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc="Backfill asset types",
+            unit="img",
+            disable=not sys.stderr.isatty(),
+        )
+        for future in pbar:
+            _id, ok, err = future.result()
+            if ok:
+                stats["updated"] += 1
+            else:
+                stats["errors"] += 1
+                if err:
+                    logger.warning("Asset type backfill failed for %s: %s", _id, err)
+
+    if rebuild_bm25 and stats["updated"]:
         bm25_index.rebuild_from_records(get_all_records())
     stats["elapsed_sec"] = round(time.perf_counter() - t0, 1)
     return stats
@@ -580,7 +658,7 @@ def repair_index_issues(
     t0 = time.perf_counter()
     rescan_stats = rescan_caption_quality()
     report = assess_index_health(include_weak=include_weak_captions)
-    if report.is_healthy:
+    if report.is_healthy and report.missing_asset_type_count == 0:
         logger.info("Post-ingest repair skipped: index is healthy")
         return {
             "skipped": True,
@@ -591,10 +669,12 @@ def repair_index_issues(
         }
 
     logger.info(
-        "Post-ingest repair starting: missing_cache=%s failed_captions=%s missing_chroma=%s",
+        "Post-ingest repair starting: missing_cache=%s failed_captions=%s "
+        "missing_chroma=%s missing_asset_types=%s",
         report.missing_cache_count,
         report.failed_caption_count,
         report.missing_chroma_count,
+        report.missing_asset_type_count,
     )
 
     phases: dict = {}
@@ -624,6 +704,14 @@ def repair_index_issues(
                     rebuild_bm25=False,
                 )
 
+        report = assess_index_health(include_weak=include_weak_captions)
+        if report.missing_asset_type_count > 0:
+            any_phase_ran = True
+            phases["asset_types"] = backfill_asset_types(
+                workers=workers,
+                rebuild_bm25=False,
+            )
+
     if repair_missing_vectors:
         report = assess_index_health(include_weak=include_weak_captions)
         if report.missing_chroma_count > 0:
@@ -651,6 +739,7 @@ def repair_index_issues(
         "cache_recached": phases.get("cache", {}).get("images_updated", 0),
         "captions_repaired": phases.get("captions", {}).get("repaired", 0)
         + phases.get("weak_captions", {}).get("repaired", 0),
+        "asset_types_backfilled": phases.get("asset_types", {}).get("updated", 0),
         "vectors_reindexed": phases.get("vectors", {}).get("reindexed", 0),
         "source_files_attempted": phases.get("cache", {}).get("source_files_attempted", 0),
         "unrecoverable": phases.get("cache", {}).get("unrecoverable", 0),
@@ -658,13 +747,16 @@ def repair_index_issues(
         "remaining_failed_captions": final.failed_caption_count,
         "remaining_weak_captions": final.weak_caption_count,
         "remaining_missing_chroma": final.missing_chroma_count,
+        "remaining_missing_asset_types": final.missing_asset_type_count,
         "rescan": rescan_stats,
     }
     logger.info(
-        "Post-ingest repair done in %.1fs: recached=%s captions=%s vectors=%s healthy=%s",
+        "Post-ingest repair done in %.1fs: recached=%s captions=%s asset_types=%s "
+        "vectors=%s healthy=%s",
         elapsed,
         summary["cache_recached"],
         summary["captions_repaired"],
+        summary["asset_types_backfilled"],
         summary["vectors_reindexed"],
         final.is_healthy,
     )
@@ -684,6 +776,9 @@ def format_post_repair_summary(repair_stats: dict) -> str:
     captions = repair_stats.get("captions_repaired", 0)
     if captions:
         parts.append(f"re-captioned {captions}")
+    asset_types = repair_stats.get("asset_types_backfilled", 0)
+    if asset_types:
+        parts.append(f"backfilled asset types for {asset_types} images")
     vectors = repair_stats.get("vectors_reindexed", 0)
     if vectors:
         parts.append(f"re-indexed {vectors} vectors")

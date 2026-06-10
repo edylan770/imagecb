@@ -144,12 +144,16 @@ def status(
         f"Captions weak: {report.weak_caption_count} | Needs regeneration: {report.needs_regeneration_count} | "
         f"Missing Chroma vectors: {report.missing_chroma_count}"
     )
+    typer.echo(
+        f"Asset types missing: {report.missing_asset_type_count} / {report.total_records}"
+    )
 
     has_issues = (
         report.missing_cache_count
         or report.failed_caption_count
         or report.weak_caption_count
         or report.missing_chroma_count
+        or report.missing_asset_type_count
     )
     if not has_issues:
         if verbose:
@@ -182,6 +186,15 @@ def status(
 
         _sample_ids("Missing cache", report.missing_cache_records)
         _sample_ids("Failed captions", report.failed_caption_records)
+
+        if report.missing_asset_type_ids:
+            ids = report.missing_asset_type_ids[:10]
+            suffix = (
+                f" ... +{report.missing_asset_type_count - 10} more"
+                if report.missing_asset_type_count > 10
+                else ""
+            )
+            typer.echo(f"\nMissing asset type sample image_ids: {', '.join(ids)}{suffix}")
 
         if report.missing_chroma_ids:
             ids = report.missing_chroma_ids[:10]
@@ -351,6 +364,103 @@ def repair_captions_cmd(
     )
 
 
+@app.command(name="backfill-asset-types")
+def backfill_asset_types_cmd(
+    workers: int = typer.Option(
+        SETTINGS.ingest_workers,
+        "--workers",
+        min=1,
+        help="Parallel VLM workers.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Report how many rows need backfill without calling the VLM.",
+    ),
+    all_rows: bool = typer.Option(
+        False,
+        "--all",
+        help="Re-caption every active row (use after a taxonomy adjustment).",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Re-caption images to populate asset_type from cached PNGs (no re-upload)."""
+    _configure_logging(verbose)
+    from imagecb.repair import backfill_asset_types
+
+    stats = backfill_asset_types(workers=workers, dry_run=dry_run, all_rows=all_rows)
+    typer.echo(
+        f"Done in {stats.get('elapsed_sec', 0)}s. "
+        f"scanned={stats['scanned']} updated={stats['updated']} "
+        f"skipped={stats['skipped']} errors={stats['errors']} "
+        f"dry_run={stats.get('dry_run', dry_run)} all_rows={stats.get('all_rows', all_rows)}"
+    )
+
+
+@app.command(name="audit-asset-types")
+def audit_asset_types_cmd(
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    json_out: Optional[Path] = typer.Option(
+        None,
+        "--json-out",
+        help="Write machine-readable audit report to this path.",
+    ),
+) -> None:
+    """Report asset_type distribution and confusion heuristics for the corpus."""
+    from imagecb.caption.asset_type_audit import audit_asset_types, format_audit_report
+
+    report = audit_asset_types()
+    typer.echo(format_audit_report(report, verbose=verbose))
+    if json_out is not None:
+        json_out.parent.mkdir(parents=True, exist_ok=True)
+        import json
+
+        with open(json_out, "w", encoding="utf-8") as f:
+            json.dump(report.to_dict(), f, indent=2, ensure_ascii=False)
+        typer.echo(f"\nWrote JSON report to {json_out}")
+
+
+@app.command(name="freeze-asset-types")
+def freeze_asset_types_cmd(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Write snapshot even when audit warnings are present.",
+    ),
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output",
+        help="Snapshot path (default: data/asset_type_taxonomy_vN.json).",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Validate audit and freeze the taxonomy manifest for this corpus."""
+    _configure_logging(verbose)
+    from imagecb.caption.asset_type import ASSET_TYPE_TAXONOMY_VERSION
+    from imagecb.caption.asset_type_audit import freeze_asset_types
+
+    try:
+        result = freeze_asset_types(force=force, output_path=output)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        f"Taxonomy v{result['version']} frozen at {result['path']} "
+        f"({result['total_records']} records, other={result['other_pct']:.1f}%)."
+    )
+    typer.echo(
+        f"Do not change ASSET_TYPES without bumping version and running "
+        f"backfill-asset-types --all."
+    )
+    if result.get("warnings") and verbose:
+        typer.echo("Warnings recorded in snapshot:")
+        for w in result["warnings"]:
+            typer.echo(f"  {w}")
+    if result.get("forced"):
+        typer.echo("(frozen with --force)")
+
+
 @app.command(name="reindex-embeddings")
 def reindex_embeddings_cmd(
     workers: int = typer.Option(
@@ -386,6 +496,7 @@ def parse_query_cmd(text: str = typer.Argument(..., help="A natural-language que
         f"expanded       : {spec.expanded_keywords}\n"
         f"must_avoid     : {spec.must_avoid_keywords}\n"
         f"file_types     : {spec.source_filters.file_types}\n"
+        f"asset_types    : {spec.source_filters.asset_types}\n"
         f"filename_like  : {spec.source_filters.filename_contains}\n"
         f"authors        : {spec.source_filters.authors}\n"
         f"after          : {spec.time_filter.after}\n"
@@ -437,6 +548,12 @@ def _parse_k_values(raw: str) -> list[int]:
     return sorted(set(values))
 
 
+def _format_short_query_line(mode: str, agg, k_values: list[int]) -> str:
+    from imagecb.eval.report import _format_aggregate_line
+
+    return _format_aggregate_line(f"Short ({mode})", agg, k_values)
+
+
 @app.command(name="eval-search")
 def eval_search_cmd(
     golden: Path = typer.Option(
@@ -486,6 +603,25 @@ def eval_search_cmd(
         raise typer.Exit(code=1) from exc
 
     typer.echo(format_summary(result, k_values))
+
+    from imagecb.eval.dataset import short_query_cases
+    from imagecb.eval.metrics import aggregate_cases
+
+    short_cases = short_query_cases(golden_set)
+    if short_cases and case_id is None:
+        for run_mode, agg in (
+            ("chat", result.chat),
+            ("retrieval", result.retrieval),
+        ):
+            if agg is None:
+                continue
+            short_ids = {c.id for c in short_cases}
+            short_metrics = [c for c in agg.cases if c.case_id in short_ids]
+            if not short_metrics:
+                continue
+            short_agg = aggregate_cases(run_mode, short_metrics, k_values)
+            typer.echo(_format_short_query_line(run_mode, short_agg, k_values))
+
     detail = format_failures(result, k_values, failures_only=failures_only)
     if detail:
         typer.echo("")

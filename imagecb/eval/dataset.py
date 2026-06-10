@@ -36,6 +36,10 @@ def active_text_cases(golden: GoldenSet) -> List[TextCase]:
     return [case for case in golden.text_cases if not case.template]
 
 
+def short_query_cases(golden: GoldenSet) -> List[TextCase]:
+    return [case for case in active_text_cases(golden) if case.short_query]
+
+
 def active_similar_cases(golden: GoldenSet) -> List[SimilarCase]:
     return [case for case in golden.similar_cases if not case.template]
 

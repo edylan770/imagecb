@@ -1,3 +1,5 @@
+import type { ResultSort } from "../types";
+
 const ADMIN_KEY_STORAGE = "imagecb.adminApiKey";
 
 export function getAdminApiKey(): string | null {
@@ -71,15 +73,36 @@ export interface SearchQualityItem {
   category: string;
 }
 
+export type CaptionQualityFilter = "all" | "ok" | "weak" | "failed";
+
 export interface CorpusImage {
   image_id: string;
   caption_short?: string | null;
+  image_name?: string | null;
   source_file?: string;
   source_type?: string;
   author?: string | null;
   image_url: string;
   caption_quality?: string;
   needs_regeneration?: boolean;
+  created_at?: string | null;
+}
+
+export interface CorpusHealth {
+  total_images: number;
+  failed_caption_count: number;
+  weak_caption_count: number;
+  needs_regeneration_count: number;
+  is_healthy: boolean;
+}
+
+export interface RepairCaptionsResult {
+  ok: boolean;
+  attempted: number;
+  repaired: number;
+  errors: number;
+  elapsed_sec?: number;
+  scope?: string;
 }
 
 export interface RegenerateCaptionResult {
@@ -119,8 +142,30 @@ export function fetchAudit(limit = 100, offset = 0): Promise<{ entries: unknown[
   return adminRequest(`/api/admin/audit?limit=${limit}&offset=${offset}`);
 }
 
-export function fetchCorpusImages(): Promise<{ images: CorpusImage[] }> {
-  return adminRequest("/api/admin/corpus/images");
+export function fetchCorpusImages(
+  sort?: ResultSort,
+  captionQuality?: CaptionQualityFilter,
+): Promise<{ images: CorpusImage[] }> {
+  const params = new URLSearchParams();
+  if (sort) params.set("sort", sort);
+  if (captionQuality && captionQuality !== "all") {
+    params.set("caption_quality", captionQuality);
+  }
+  const qs = params.toString();
+  return adminRequest(`/api/admin/corpus/images${qs ? `?${qs}` : ""}`);
+}
+
+export function fetchCorpusHealth(): Promise<CorpusHealth> {
+  return adminRequest("/api/admin/corpus/health");
+}
+
+export function repairCaptions(
+  scope: "failed" | "weak",
+): Promise<RepairCaptionsResult> {
+  return adminRequest(
+    `/api/admin/corpus/repair-captions?scope=${encodeURIComponent(scope)}`,
+    { method: "POST" },
+  );
 }
 
 export function fetchOrphans(neverInteracted = false): Promise<{ orphans: unknown[] }> {

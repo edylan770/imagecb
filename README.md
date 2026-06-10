@@ -156,11 +156,9 @@ you ingest files or use **Add to corpus** in the UI.
 
 To index files from your machine via the CLI inside the container:
 
-1. Create a `corpus` folder next to the project (or use any path you
-   prefer).
-2. In `docker-compose.yml`, uncomment the corpus volume line:
-   `# - ./corpus:/corpus:ro`
-3. Run ingest:
+1. Create a `corpus` folder next to the project and add files to index
+   (Docker creates an empty `corpus/` folder on first start if missing).
+2. Run ingest:
 
    ```powershell
    docker compose run --rm imagecb python -m imagecb.cli ingest /corpus

@@ -33,6 +33,15 @@ def test_merge_filters_only_when_refinement_turn():
     assert merged.source_filters.filename_contains == ["Q3_Review.pptx"]
 
 
+def test_merge_filters_carries_asset_types():
+    prev = QuerySpec(
+        source_filters=SourceFilters(asset_types=["photo"]),
+    )
+    refined = QuerySpec(semantic_query="team meetings", is_refinement=True)
+    merged = _merge_filters(prev, refined)
+    assert merged.source_filters.asset_types == ["photo"]
+
+
 @patch("imagecb.retrieval.session.rerank")
 @patch("imagecb.retrieval.session.search")
 @patch("imagecb.retrieval.session.parse_query")
@@ -57,7 +66,7 @@ def test_fresh_turn_searches_full_corpus(mock_parse, mock_search, mock_rerank):
 @patch("imagecb.retrieval.session.rerank")
 @patch("imagecb.retrieval.session.search")
 @patch("imagecb.retrieval.session.parse_query")
-def test_refinement_turn_restricts_to_previous_pool(mock_parse, mock_search, mock_rerank):
+def test_refinement_turn_searches_full_corpus(mock_parse, mock_search, mock_rerank):
     session = ChatSession()
     session.last_candidate_ids = ["img-1", "img-2"]
 
@@ -71,7 +80,27 @@ def test_refinement_turn_restricts_to_previous_pool(mock_parse, mock_search, moc
 
     mock_search.assert_called_once()
     _, kwargs = mock_search.call_args
-    assert kwargs.get("restrict_to") == ["img-1", "img-2"]
+    assert kwargs.get("restrict_to") is None
+
+
+@patch("imagecb.retrieval.session.rerank")
+@patch("imagecb.retrieval.session.search")
+@patch("imagecb.retrieval.session.parse_query")
+def test_refinement_turn_does_not_merge_sticky_filters(mock_parse, mock_search, mock_rerank):
+    session = ChatSession()
+    session.last_spec = _spec(filename_contains=["Q3_Review.pptx"])
+    session.last_candidate_ids = ["img-1", "img-2"]
+
+    mock_parse.return_value = _spec(semantic_query="only charts", is_refinement=True)
+    mock_search.return_value = SearchOutcome(
+        candidates=[Candidate(image_id="img-9", fused_score=0.5)]
+    )
+    mock_rerank.return_value = []
+
+    result = session.ask("only charts")
+
+    assert result.spec.source_filters.filename_contains == []
+    assert result.sticky_merged is False
 
 
 @patch("imagecb.retrieval.session.rerank")

@@ -13,6 +13,7 @@ from imagecb.repair import (
     IndexHealthReport,
     assess_index_health,
     format_post_repair_summary,
+    repair_failed_captions,
     repair_index_issues,
     repair_missing_cache,
 )
@@ -131,6 +132,17 @@ def test_repair_missing_cache_calls_ingest_paths_with_force(tmp_path):
     assert call["force"] is True
     assert call["auto_repair"] is False
     assert call["rebuild_bm25"] is False
+
+
+def test_repair_failed_captions_scope_weak_only():
+    weak = _record("weak-1", caption_quality="weak")
+    with patch("imagecb.repair.records_with_weak_captions", return_value=[weak]), patch(
+        "imagecb.repair._repair_one_caption", return_value=("weak-1", True, None)
+    ), patch("imagecb.repair.bm25_index.rebuild_from_records"):
+        stats = repair_failed_captions(scope="weak")
+    assert stats["attempted"] == 1
+    assert stats["repaired"] == 1
+    assert stats["scope"] == "weak"
 
 
 def test_repair_index_issues_noop_when_healthy():

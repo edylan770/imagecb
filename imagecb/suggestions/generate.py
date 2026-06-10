@@ -14,7 +14,6 @@ from imagecb.suggestions.corpus_summary import (
     build_corpus_context,
     context_to_prompt_text,
 )
-from imagecb.telemetry.recorder import get_recent_user_queries
 
 SUGGESTIONS_SYSTEM_PROMPT = """You suggest starter search queries for an image search app over \
 ingested slides, PDFs, and standalone images.
@@ -29,9 +28,6 @@ Never invent assets or topics.
 - Prefer semantic, topic-based search phrases drawn from tags, captions, and recommended search phrases.
 - NEVER suggest "images from [filename]", "slides from [filename]", or any filename-only filter query.
 - Source filenames in the corpus context are for grounding only — do not use them in suggestions.
-- If recent user queries are provided, include 1–2 suggestions that extend or paraphrase them \
-(do not copy verbatim unless still useful).
-- Recent chat titles are secondary context only when queries are absent.
 - Do not include markdown, code fences, or explanation outside the JSON object."""
 
 ONBOARDING_SUGGESTIONS = [
@@ -56,71 +52,8 @@ class SuggestionsResult:
     cached: bool
 
 
-def normalize_recent_titles(titles: Sequence[str], *, limit: int = 8) -> Tuple[str, ...]:
-    seen: set[str] = set()
-    out: List[str] = []
-    for raw in titles:
-        t = raw.strip()
-        if not t or t.lower() == "new chat":
-            continue
-        key = t.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(t)
-        if len(out) >= limit:
-            break
-    return tuple(out)
-
-
-def normalize_recent_queries(queries: Sequence[str], *, limit: int = 8) -> Tuple[str, ...]:
-    seen: set[str] = set()
-    out: List[str] = []
-    for raw in queries:
-        q = raw.strip()
-        if not q:
-            continue
-        key = q.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(q)
-        if len(out) >= limit:
-            break
-    return tuple(out)
-
-
-def merge_recent_queries(
-    client_queries: Sequence[str],
-    telemetry_queries: Sequence[str],
-    *,
-    limit: int = 8,
-) -> Tuple[str, ...]:
-    """Client queries first; telemetry fills remaining slots."""
-    seen: set[str] = set()
-    out: List[str] = []
-    for raw in list(client_queries) + list(telemetry_queries):
-        q = raw.strip()
-        if not q:
-            continue
-        key = q.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(q)
-        if len(out) >= limit:
-            break
-    return tuple(out)
-
-
-def _cache_key(
-    ctx: CorpusContext,
-    titles: Tuple[str, ...],
-    queries: Tuple[str, ...],
-) -> str:
-    title_part = "|".join(t.lower() for t in titles)
-    query_part = "|".join(q.lower() for q in queries)
-    return f"{ctx.fingerprint}|q:{query_part}|t:{title_part}"
+def _cache_key(ctx: CorpusContext, limit: int) -> str:
+    return f"{ctx.fingerprint}|limit:{limit}"
 
 
 def _coerce_suggestions_json(raw: str) -> List[str]:
@@ -205,10 +138,9 @@ def _corpus_semantic_pool(ctx: CorpusContext) -> List[str]:
 def _blend_suggestions(
     candidates: Sequence[str],
     ctx: CorpusContext,
-    queries: Tuple[str, ...],
     limit: int,
 ) -> List[str]:
-    """Merge user queries, corpus semantic seeds, and filtered candidates."""
+    """Merge corpus semantic seeds and filtered candidates."""
     out: List[str] = []
     seen: set[str] = set()
     backfill = _corpus_semantic_pool(ctx)
@@ -222,9 +154,6 @@ def _blend_suggestions(
             return
         seen.add(key)
         out.append(s)
-
-    for q in queries[:2]:
-        add(q)
 
     for c in candidates:
         add(c)
@@ -243,18 +172,8 @@ def _blend_suggestions(
     return _trim_suggestions(out, limit)
 
 
-def _user_payload(
-    ctx: CorpusContext,
-    titles: Tuple[str, ...],
-    queries: Tuple[str, ...],
-    limit: int,
-) -> str:
+def _user_payload(ctx: CorpusContext, limit: int) -> str:
     blocks: List[str] = []
-    if queries:
-        blocks.append(
-            "Recent user queries (highest priority — extend or paraphrase 1–2):\n"
-            + "\n".join(f"- {q}" for q in queries)
-        )
     if ctx.sample_recommended_cases:
         blocks.append(
             "Recommended search phrases from corpus:\n"
@@ -269,11 +188,6 @@ def _user_payload(
             topic_lines.extend(f"  - {c}" for c in ctx.sample_captions[:6])
         blocks.append("Corpus topics:\n" + "\n".join(topic_lines))
     blocks.append("Corpus context:\n" + context_to_prompt_text(ctx))
-    if not queries and titles:
-        blocks.append(
-            "Recent chat titles (secondary context):\n"
-            + "\n".join(f"- {t}" for t in titles)
-        )
     blocks.append(
         f"Generate exactly {limit} semantic, topic-based suggestions. "
         "Never use filename-filter phrasing."
@@ -281,16 +195,9 @@ def _user_payload(
     return "\n\n".join(blocks)
 
 
-def _corpus_heuristic_suggestions(
-    ctx: CorpusContext,
-    queries: Tuple[str, ...],
-    limit: int,
-) -> List[str]:
-    """Build suggestions from corpus metadata and user history only."""
+def _corpus_heuristic_suggestions(ctx: CorpusContext, limit: int) -> List[str]:
+    """Build suggestions from corpus metadata only."""
     candidates: List[str] = []
-
-    for q in queries[:2]:
-        candidates.append(q)
 
     for case in ctx.sample_recommended_cases:
         candidates.append(case)
@@ -304,7 +211,7 @@ def _corpus_heuristic_suggestions(
     for tag in ctx.top_tags[:4]:
         candidates.append(f"{tag} and related visuals")
 
-    return _blend_suggestions(candidates, ctx, queries, limit)
+    return _blend_suggestions(candidates, ctx, limit)
 
 
 class SuggestionLLM:
@@ -380,34 +287,23 @@ def _onboarding_list(limit: int) -> List[str]:
     return _trim_suggestions(ONBOARDING_SUGGESTIONS, limit)
 
 
-def _llm_suggestions(
-    ctx: CorpusContext,
-    titles: Tuple[str, ...],
-    queries: Tuple[str, ...],
-    limit: int,
-) -> List[str]:
-    payload = _user_payload(ctx, titles, queries, limit)
+def _llm_suggestions(ctx: CorpusContext, limit: int) -> List[str]:
+    payload = _user_payload(ctx, limit)
     raw = get_suggestion_llm().generate(payload)
     parsed = _coerce_suggestions_json(raw)
     if len(parsed) < 2:
-        return _corpus_heuristic_suggestions(ctx, queries, limit)
-    return _blend_suggestions(parsed, ctx, queries, limit)
+        return _corpus_heuristic_suggestions(ctx, limit)
+    return _blend_suggestions(parsed, ctx, limit)
 
 
 def generate_suggestions(
-    recent_titles: Optional[Sequence[str]] = None,
     *,
-    recent_queries: Optional[Sequence[str]] = None,
-    user_id: Optional[str] = None,
     limit: Optional[int] = None,
     ctx: Optional[CorpusContext] = None,
 ) -> SuggestionsResult:
-    """Return suggested queries; uses cache keyed by corpus fingerprint + user history."""
+    """Return suggested queries; uses cache keyed by corpus fingerprint."""
     n = limit if limit is not None else SETTINGS.suggestions_limit
     n = max(2, min(8, n))
-    titles = normalize_recent_titles(recent_titles or [])
-    telemetry = get_recent_user_queries(user_id or "", limit=8)
-    queries = merge_recent_queries(recent_queries or [], telemetry, limit=8)
     corpus = ctx if ctx is not None else build_corpus_context()
 
     if corpus.indexed_count == 0:
@@ -416,7 +312,7 @@ def generate_suggestions(
             cached=False,
         )
 
-    key = _cache_key(corpus, titles, queries)
+    key = _cache_key(corpus, n)
     now = time.monotonic()
     ttl = SETTINGS.suggestions_cache_ttl_sec
     cached_entry = _cache.get(key)
@@ -429,9 +325,9 @@ def generate_suggestions(
             )
 
     try:
-        items = _llm_suggestions(corpus, titles, queries, n)
+        items = _llm_suggestions(corpus, n)
     except Exception:  # noqa: BLE001
-        items = _corpus_heuristic_suggestions(corpus, queries, n)
+        items = _corpus_heuristic_suggestions(corpus, n)
 
     _cache[key] = (now, items)
     return SuggestionsResult(suggestions=items, cached=False)

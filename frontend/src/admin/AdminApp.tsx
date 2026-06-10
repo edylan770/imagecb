@@ -3,6 +3,7 @@ import { Route, Routes } from "react-router-dom";
 import {
   fetchAnalyticsSummary,
   fetchAudit,
+  fetchCorpusHealth,
   fetchCorpusImages,
   fetchDeleted,
   fetchDuplicateClusters,
@@ -10,13 +11,19 @@ import {
   fetchSearchQuality,
   regenerateCaption,
   reindexImage,
+  repairCaptions,
   restoreImage,
   softDeleteImage,
   type AnalyticsSummary,
+  type CaptionQualityFilter,
+  type CorpusHealth,
   type CorpusImage,
   type SearchQualityItem,
   type SearchQualityLists,
 } from "../api/adminClient";
+import { SortSelect } from "../components/SortSelect";
+import { defaultCatalogSort } from "../sortResults";
+import type { ResultSort } from "../types";
 import { AdminLayout } from "./AdminShell";
 
 function queryTooltip(row: SearchQualityItem): string {
@@ -28,27 +35,47 @@ function queryTooltip(row: SearchQualityItem): string {
   return parts.join("\n") || row.display_query;
 }
 
-function StatCard({ label, value }: { label: string; value: string | number }) {
+function StatCard({
+  label,
+  value,
+  subtitle,
+}: {
+  label: string;
+  value: string | number;
+  subtitle?: string;
+}) {
   return (
     <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-navy-200">
       <p className="text-xs font-medium uppercase tracking-wide text-navy-500">{label}</p>
       <p className="mt-1 text-2xl font-semibold text-navy-900">{value}</p>
+      {subtitle && <p className="mt-0.5 text-xs text-navy-500">{subtitle}</p>}
     </div>
   );
 }
 
 function DashboardPage() {
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [health, setHealth] = useState<CorpusHealth | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAnalyticsSummary()
       .then(setSummary)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    fetchCorpusHealth()
+      .then(setHealth)
+      .catch((e) => setHealthError(e instanceof Error ? e.message : String(e)));
   }, []);
 
   if (error) return <p className="text-red-600">{error}</p>;
   if (!summary) return <p className="text-navy-500">Loading…</p>;
+
+  const corpusSubtitle = health
+    ? `of ${health.total_images} indexed`
+    : healthError
+      ? "unavailable"
+      : "…";
 
   return (
     <div className="space-y-6">
@@ -75,7 +102,20 @@ function DashboardPage() {
           label="Interaction rate"
           value={`${(summary.interaction_rate * 100).toFixed(1)}%`}
         />
+        <StatCard
+          label="Failed captions"
+          value={health?.failed_caption_count ?? "…"}
+          subtitle={corpusSubtitle}
+        />
+        <StatCard
+          label="Weak captions"
+          value={health?.weak_caption_count ?? "…"}
+          subtitle={corpusSubtitle}
+        />
       </div>
+      {healthError && (
+        <p className="text-xs text-amber-700">Caption health: {healthError}</p>
+      )}
       <p className="text-xs text-navy-500">
         Weak threshold (raw score): {summary.weak_score_threshold}
       </p>
@@ -161,15 +201,30 @@ function CorpusPage() {
     Record<string, "regenerate" | "reindex">
   >({});
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({});
+  const [corpusSortBy, setCorpusSortBy] = useState<ResultSort>(defaultCatalogSort());
+  const [corpusQualityFilter, setCorpusQualityFilter] =
+    useState<CaptionQualityFilter>("all");
+  const [corpusHealth, setCorpusHealth] = useState<CorpusHealth | null>(null);
+  const [bulkRepairScope, setBulkRepairScope] = useState<"failed" | "weak" | null>(
+    null,
+  );
+  const [bulkRepairResult, setBulkRepairResult] = useState<string | null>(null);
+  const [bulkRepairError, setBulkRepairError] = useState<string | null>(null);
+
+  const loadHealth = useCallback(() => {
+    fetchCorpusHealth()
+      .then(setCorpusHealth)
+      .catch(() => setCorpusHealth(null));
+  }, []);
 
   const loadCorpus = useCallback(() => {
     setCorpusLoading(true);
     setCorpusError(null);
-    fetchCorpusImages()
+    fetchCorpusImages(corpusSortBy, corpusQualityFilter)
       .then((r) => setImages(r.images))
       .catch((e) => setCorpusError(e instanceof Error ? e.message : String(e)))
       .finally(() => setCorpusLoading(false));
-  }, []);
+  }, [corpusSortBy, corpusQualityFilter]);
 
   const loadSecondary = useCallback(() => {
     fetchOrphans()
@@ -201,12 +256,46 @@ function CorpusPage() {
   const reloadAll = useCallback(() => {
     loadCorpus();
     loadSecondary();
-  }, [loadCorpus, loadSecondary]);
+    loadHealth();
+  }, [loadCorpus, loadSecondary, loadHealth]);
 
   useEffect(() => {
     loadCorpus();
     loadSecondary();
-  }, [loadCorpus, loadSecondary]);
+    loadHealth();
+  }, [loadCorpus, loadSecondary, loadHealth]);
+
+  const hasPendingActions = Object.keys(pendingAction).length > 0;
+
+  const handleBulkRepair = async (scope: "failed" | "weak") => {
+    const count =
+      scope === "failed"
+        ? (corpusHealth?.failed_caption_count ?? 0)
+        : (corpusHealth?.weak_caption_count ?? 0);
+    if (count === 0) return;
+
+    const message =
+      scope === "failed"
+        ? `Re-run the vision model for ${count} failed caption(s)? This may take several minutes and uses the VLM API.`
+        : `Re-run the vision model for ${count} weak-quality caption(s) only (not failed ones)? This may take several minutes and uses the VLM API.`;
+    if (!window.confirm(message)) return;
+
+    setBulkRepairError(null);
+    setBulkRepairResult(null);
+    setBulkRepairScope(scope);
+    try {
+      const result = await repairCaptions(scope);
+      setBulkRepairResult(
+        `Repaired ${result.repaired} of ${result.attempted}` +
+          (result.errors > 0 ? ` (${result.errors} error(s))` : ""),
+      );
+      reloadAll();
+    } catch (e) {
+      setBulkRepairError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBulkRepairScope(null);
+    }
+  };
 
   const handleSoftDelete = async (imageId: string) => {
     await softDeleteImage(imageId);
@@ -278,9 +367,71 @@ function CorpusPage() {
       <h2 className="text-lg font-semibold text-navy-900">Corpus curation</h2>
 
       <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-navy-500">
-          Indexed corpus ({corpusLoading ? "…" : images.length})
-        </h3>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-navy-500">
+            Indexed corpus ({corpusLoading ? "…" : images.length})
+          </h3>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-1.5 text-xs text-navy-600">
+              <span className="shrink-0 font-medium">Quality</span>
+              <select
+                value={corpusQualityFilter}
+                disabled={corpusLoading}
+                onChange={(e) =>
+                  setCorpusQualityFilter(e.target.value as CaptionQualityFilter)
+                }
+                className="rounded-md border border-navy-200 bg-white px-2 py-1 text-xs text-navy-800 disabled:opacity-50"
+              >
+                <option value="all">All</option>
+                <option value="ok">OK</option>
+                <option value="weak">Weak</option>
+                <option value="failed">Failed</option>
+              </select>
+            </label>
+            <SortSelect
+              value={corpusSortBy}
+              onChange={setCorpusSortBy}
+              includeRelevance={false}
+              disabled={corpusLoading}
+            />
+          </div>
+        </div>
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+            disabled={
+              bulkRepairScope !== null ||
+              hasPendingActions ||
+              (corpusHealth?.failed_caption_count ?? 0) === 0
+            }
+            onClick={() => void handleBulkRepair("failed")}
+          >
+            {bulkRepairScope === "failed"
+              ? "Repairing failed…"
+              : `Repair all failed (${corpusHealth?.failed_caption_count ?? 0})`}
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+            disabled={
+              bulkRepairScope !== null ||
+              hasPendingActions ||
+              (corpusHealth?.weak_caption_count ?? 0) === 0
+            }
+            onClick={() => void handleBulkRepair("weak")}
+          >
+            {bulkRepairScope === "weak"
+              ? "Repairing weak…"
+              : `Repair all weak (${corpusHealth?.weak_caption_count ?? 0})`}
+          </button>
+          {bulkRepairResult && (
+            <p className="text-xs text-navy-600">{bulkRepairResult}</p>
+          )}
+          {bulkRepairError && (
+            <p className="text-xs text-red-600">{bulkRepairError}</p>
+          )}
+        </div>
         {corpusError && (
           <p className="mb-2 text-sm text-red-600">{corpusError}</p>
         )}

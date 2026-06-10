@@ -68,6 +68,7 @@ class ImageRecord(Base):
     slide_body_text = Column(Text, nullable=True)
     caption_quality = Column(String, nullable=True)  # ok | weak | failed
     text_read_uncertain = Column(Integer, nullable=True)  # 0/1
+    asset_type = Column(String, nullable=True, index=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -100,6 +101,7 @@ def _migrate_schema(engine) -> None:
             ("slide_body_text", "ALTER TABLE images ADD COLUMN slide_body_text TEXT"),
             ("caption_quality", "ALTER TABLE images ADD COLUMN caption_quality TEXT"),
             ("text_read_uncertain", "ALTER TABLE images ADD COLUMN text_read_uncertain INTEGER"),
+            ("asset_type", "ALTER TABLE images ADD COLUMN asset_type TEXT"),
         ):
             if col not in cols:
                 conn.execute(text(ddl))
@@ -234,28 +236,33 @@ def get_deleted_records() -> List[ImageRecord]:
         return list(rows)
 
 
-def get_recent_records(limit: int = 50) -> List[ImageRecord]:
-    """Most recently ingested images (for corpus catalog UI)."""
+def list_catalog_records(limit: int = 50, sort: str = "newest") -> List[ImageRecord]:
+    """Catalog browse listing with configurable sort order."""
+    from imagecb.retrieval.sort import catalog_sort_for_sql, resolve_sort
+
     limit = max(1, min(limit, 200))
+    resolved = resolve_sort(sort, is_search=False)
+    order_clauses = catalog_sort_for_sql(resolved)
     with session_scope() as s:
-        rows = (
-            s.execute(
-                select(ImageRecord)
-                .where(ImageRecord.deleted_at.is_(None))
-                .order_by(ImageRecord.created_at.desc())
-                .limit(limit)
-            )
-            .scalars()
-            .all()
-        )
+        query = select(ImageRecord).where(ImageRecord.deleted_at.is_(None))
+        for clause in order_clauses:
+            query = query.order_by(clause)
+        query = query.limit(limit)
+        rows = s.execute(query).scalars().all()
         for r in rows:
             s.expunge(r)
         return list(rows)
 
 
+def get_recent_records(limit: int = 50) -> List[ImageRecord]:
+    """Most recently ingested images (for corpus catalog UI)."""
+    return list_catalog_records(limit, sort="newest")
+
+
 def filter_image_ids(
     *,
     file_types: Optional[Iterable[str]] = None,
+    asset_types: Optional[Iterable[str]] = None,
     filename_contains: Optional[Iterable[str]] = None,
     authors: Optional[Iterable[str]] = None,
     modified_after: Optional[datetime] = None,
@@ -264,9 +271,13 @@ def filter_image_ids(
     """Return image_ids matching the provided metadata filters.
 
     Empty/None arguments are ignored. Author and filename matches are
-    case-insensitive substring checks; file_types is exact.
+    case-insensitive substring checks; file_types and asset_types are exact.
+    When asset_types is set, rows with null/empty asset_type are excluded.
     """
+    from imagecb.caption.asset_type import normalize_asset_types
+
     ft = [t.lower() for t in (file_types or []) if t]
+    at = normalize_asset_types(list(asset_types or []))
     fc = [c.lower() for c in (filename_contains or []) if c]
     au = [a.lower() for a in (authors or []) if a]
 
@@ -280,6 +291,10 @@ def filter_image_ids(
         for r in records:
             if ft and (r.source_type or "").lower() not in ft:
                 continue
+            if at:
+                row_type = (r.asset_type or "").strip().lower()
+                if not row_type or row_type not in at:
+                    continue
             if fc:
                 src = Path(r.source_file or "").name.lower()
                 if not any(c in src for c in fc):

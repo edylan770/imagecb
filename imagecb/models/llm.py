@@ -24,6 +24,7 @@ relative times like "last quarter" or "in May". Return ONLY a JSON object with t
   "must_avoid_keywords": [string],           // optional, lowercase
   "source_filters": {
     "file_types": [string],                  // any of: "pptx", "pdf", "image"
+    "asset_types": [string],                 // rarely used; see rules below
     "filename_contains": [string],           // substrings to require in the source filename
     "authors": [string]                      // author names
   },
@@ -37,11 +38,22 @@ relative times like "last quarter" or "in May". Return ONLY a JSON object with t
 
 Rules:
 - Omit a filter by leaving its list empty or its value null.
-- Do not set source_filters (file_types, filename_contains, authors) or time_filter unless the user
-  explicitly mentioned them in this turn or they appear in active filters from a prior refinement.
+- Do not set source_filters (file_types, asset_types, filename_contains, authors) or time_filter
+  unless the user explicitly named a source constraint in this turn (e.g. "from Q3_Review.pptx",
+  "pptx only", "by Alice", "modified last month") or they appear in active filters from a prior
+  refinement.
+- Content words alone are NOT filters. Put them in semantic_query instead.
+  Examples:
+  - "diagram" -> semantic_query: "diagram", empty source_filters (NOT asset_types)
+  - "presentation" -> semantic_query: "presentation", empty source_filters (NOT file_types pptx)
+  - "flowchart" -> semantic_query: "flowchart", empty source_filters
+- Set asset_types ONLY when the user explicitly constrains visual format with filter language
+  (e.g. "only photos", "screenshots only", "just diagrams") — not when the query is only a topic.
+- Set file_types ONLY when the user names pptx, pdf, powerpoint, or image files as a source.
+- For "not charts" / "no diagrams", use must_avoid_keywords; do not use asset_types for negatives.
 - Treat phrases like "narrow it down", "only the ones with...", "from those" as refinements.
 - Never invent filenames or authors that the user did not mention or that aren't visible in history.
-- Keep semantic_query close to the user's wording; acronym and synonym expansion happens downstream."""
+- Keep semantic_query close to the user's wording."""
 
 
 ACRONYM_SYSTEM_PROMPT = (

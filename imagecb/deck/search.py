@@ -6,8 +6,7 @@ from typing import List, Optional
 
 from imagecb.formatting.assistant_reply import ResultCard, build_result_cards
 from imagecb.retrieval.hybrid import search
-from imagecb.retrieval.query_build import rerank_query_text
-from imagecb.retrieval.query_expand import expand_query_spec
+from imagecb.retrieval.query_build import rerank_query_text, resolve_rerank_top_n
 from imagecb.retrieval.query_parser import QuerySpec
 from imagecb.retrieval.rerank import RankedResult, rerank
 
@@ -17,6 +16,7 @@ def search_for_description(
     *,
     top_k: int = 10,
     min_match_percent: int = 0,
+    sort: Optional[str] = None,
     image_url_prefix: str = "/api/images",
 ) -> tuple[List[ResultCard], List[RankedResult]]:
     """Run hybrid search + rerank using description as semantic_query."""
@@ -25,7 +25,6 @@ def search_for_description(
         raw_text=description,
         top_k=max(1, min(int(top_k), 50)),
     )
-    spec = expand_query_spec(spec)
     min_score = max(0.0, min(float(min_match_percent) / 100.0, 1.0))
     outcome = search(spec)
     candidates = outcome.candidates
@@ -35,15 +34,24 @@ def search_for_description(
         query_for_rerank,
         candidates,
         top_k=spec.top_k,
+        top_n=resolve_rerank_top_n(spec),
         min_score=min_score,
+        spec=spec,
     )
     if not results and candidates and min_score > 0:
         results = rerank(
             query_for_rerank,
             candidates,
             top_k=spec.top_k,
+            top_n=resolve_rerank_top_n(spec),
             min_score=0.0,
+            spec=spec,
         )
+
+    from imagecb.retrieval.sort import resolve_sort, sort_ranked_results
+
+    resolved_sort = resolve_sort(sort, is_search=True)
+    results = sort_ranked_results(results, resolved_sort)
 
     cards = build_result_cards(results, image_url_prefix=image_url_prefix)
     return cards, results
@@ -79,6 +87,7 @@ def result_cards_to_dicts(cards: List[ResultCard]) -> List[dict]:
                 "source_url": c.source_url,
                 "source_location": c.source_location,
                 "source_path": c.source_path,
+                "created_at": c.created_at,
             }
         )
     return out

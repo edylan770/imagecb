@@ -15,6 +15,11 @@ from typing import Any, List, Optional
 
 from PIL import Image
 
+from imagecb.caption.asset_type import (
+    DEFAULT_ASSET_TYPE,
+    format_taxonomy_for_prompt,
+    normalize_asset_type,
+)
 from imagecb.caption.examples import format_few_shot_for_prompt
 from imagecb.caption.schema import (
     CAPTION_JSON_SCHEMA,
@@ -37,9 +42,11 @@ CAPTION_SYSTEM_PROMPT = (
     "uncertainty instead of guessing brands or identities. For tags, prefer terms "
     "from the provided corpus vocabulary only when they are a full literal match "
     "to the image (not partial/theme overlap); invent a new concise tag only when "
-    "nothing fits. Search fields (recommended_cases, aliases) are PRIMARY for retrieval; "
-    "detailed_description is secondary catalog prose. Write search fields as a user "
-    "would type queries, including synonyms, acronym expansions, and alternate phrasings."
+    "nothing fits. Search fields support retrieval but must stay specific to this "
+    "image. Write recommended_cases as concrete queries a user would type for THIS "
+    "scene (not generic format words alone). For grounded.asset_type, pick exactly "
+    "one value from the closed visual-format list; when obvious, include a matching "
+    "format tag (e.g. diagram, screenshot) but do not duplicate asset_type as a tag."
 )
 
 CAPTION_USER_PROMPT_TEMPLATE = (
@@ -51,13 +58,15 @@ CAPTION_USER_PROMPT_TEMPLATE = (
     "Return via the emit_caption tool with:\n"
     "- image_name: short title (<= 8 words)\n"
     "- grounded: objects (visible only), scene, readable_text (legible text only), "
-    "text_read_uncertain (true if text is partial/illegible)\n"
+    "text_read_uncertain (true if text is partial/illegible), asset_type (exactly one "
+    "closed-list visual format)\n"
+    "Asset type taxonomy:\n{asset_type_block}\n"
     "- interpretive: theme, use_case, short_caption (<= 20 words), detailed_description "
     "(1-3 sentences, catalog prose only)\n"
-    "- search: tags (3-10 lowercase singular words), recommended_cases (3-6 natural "
-    "queries a searcher would type — primary retrieval field), aliases (synonyms, "
-    "acronym expansions like 'sdlc: software development life cycle', and alternate "
-    "phrasings)\n\n"
+    "- search: tags (3-10 lowercase singular words), recommended_cases (3-4 specific "
+    "natural-language queries for THIS image — avoid bare format words like 'diagram' "
+    "or 'chart' alone), aliases (synonyms and acronym expansions only, e.g. "
+    "'sdlc: software development life cycle')\n\n"
     "Style reference — match this granularity exactly (tags: lowercase singular words; "
     "search fields as user queries):\n"
     "{examples_block}"
@@ -87,6 +96,7 @@ class GroundedCaption:
     scene: str = ""
     readable_text: str = ""
     text_read_uncertain: bool = False
+    asset_type: str = DEFAULT_ASSET_TYPE
 
 
 @dataclass
@@ -146,6 +156,10 @@ class CaptionJSON:
         return self.grounded.text_read_uncertain
 
     @property
+    def asset_type(self) -> str:
+        return self.grounded.asset_type
+
+    @property
     def text_overlay_summary(self) -> str:
         return self.grounded.readable_text
 
@@ -196,6 +210,7 @@ class CaptionJSON:
                     scene=str(g.get("scene", "") or ""),
                     readable_text=str(g.get("readable_text", "") or ""),
                     text_read_uncertain=bool(g.get("text_read_uncertain", False)),
+                    asset_type=normalize_asset_type(g.get("asset_type")),
                 ),
                 interpretive=InterpretiveCaption(
                     theme=str(i.get("theme", "") or ""),
@@ -219,6 +234,7 @@ class CaptionJSON:
                 scene=str(d.get("scene", "") or ""),
                 readable_text=str(d.get("text_overlay_summary", "") or d.get("readable_text", "") or ""),
                 text_read_uncertain=bool(d.get("text_read_uncertain", False)),
+                asset_type=normalize_asset_type(d.get("asset_type")),
             ),
             interpretive=InterpretiveCaption(
                 theme=str(d.get("theme", "") or ""),
@@ -342,6 +358,7 @@ def _build_caption_user_prompt(
     return CAPTION_USER_PROMPT_TEMPLATE.format(
         context_block=context_block,
         vocab_block=vocab_block,
+        asset_type_block=format_taxonomy_for_prompt(),
         examples_block=format_few_shot_for_prompt(),
     )
 

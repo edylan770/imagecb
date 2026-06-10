@@ -34,6 +34,20 @@ def test_notes_sticky_filters():
     assert any("Q3_Review" in n for n in notes)
 
 
+def test_notes_asset_types():
+    spec = QuerySpec(
+        semantic_query="team photos",
+        source_filters=SourceFilters(asset_types=["photo", "illustration"]),
+    )
+    notes = build_interpretation_notes(
+        spec,
+        applied_refinement_pool=False,
+        pool_size=0,
+        sticky_merged=True,
+    )
+    assert any("asset types" in n and "photo" in n for n in notes)
+
+
 def test_notes_must_have():
     spec = QuerySpec(
         semantic_query="screenshots",

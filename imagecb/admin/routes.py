@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -58,11 +58,53 @@ def admin_audit_log(
     return {"entries": audit.list_audit_entries(limit=limit, offset=offset)}
 
 
-@router.get("/corpus/images")
-def admin_corpus_images(
+@router.get("/corpus/health")
+def admin_corpus_health(
     _: str = Depends(require_admin),
 ):
-    return {"images": curation.list_corpus_images()}
+    return curation.corpus_health_summary()
+
+
+@router.get("/corpus/images")
+def admin_corpus_images(
+    sort: Optional[str] = Query(None),
+    caption_quality: Optional[str] = Query(None),
+    _: str = Depends(require_admin),
+):
+    from imagecb.retrieval.sort import InvalidSortError, resolve_sort
+
+    try:
+        resolved = resolve_sort(sort, is_search=False)
+    except InvalidSortError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        images = curation.list_corpus_images(sort=resolved, caption_quality=caption_quality)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"images": images}
+
+
+@router.post("/corpus/repair-captions")
+def admin_repair_captions(
+    scope: Literal["failed", "weak"] = Query("failed"),
+    actor: str = Depends(require_admin),
+):
+    from imagecb.repair import repair_failed_captions
+
+    result = repair_failed_captions(scope=scope)
+    audit.append_audit(
+        actor=actor,
+        action="repair_captions",
+        target_type="corpus",
+        target_id=scope,
+        details={
+            "scope": scope,
+            "attempted": result.get("attempted", 0),
+            "repaired": result.get("repaired", 0),
+            "errors": result.get("errors", 0),
+        },
+    )
+    return {"ok": True, **result}
 
 
 @router.get("/corpus/orphans")
