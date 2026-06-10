@@ -13,8 +13,6 @@ import {
   lastTurn,
   loadStoredState,
   newTurnId,
-  recentChatTitles,
-  recentUserQueries,
   saveStoredState,
   titleFromMessage,
   turnsToMessages,
@@ -27,11 +25,14 @@ import { EmptyState } from "./components/EmptyState";
 import { AdminNavLink } from "./components/AdminNavLink";
 import { Header } from "./components/Header";
 import { ResultsGrid } from "./components/ResultsGrid";
+import { SortSelect } from "./components/SortSelect";
+import { defaultCatalogSort, defaultSearchSort, sortResultCards } from "./sortResults";
 import type {
   CatalogItem,
   Conversation,
   ConversationTurn,
   ResultCard,
+  ResultSort,
 } from "./types";
 
 function applyTurnToPanel(
@@ -76,6 +77,8 @@ export default function App() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [searchEventId, setSearchEventId] = useState<string | null>(null);
+  const [searchSortBy, setSearchSortBy] = useState<ResultSort>(defaultSearchSort());
+  const [catalogSortBy, setCatalogSortBy] = useState<ResultSort>(defaultCatalogSort());
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -87,6 +90,11 @@ export default function App() {
   const messages = useMemo(
     () => (activeConversation ? turnsToMessages(activeConversation.turns) : []),
     [activeConversation],
+  );
+
+  const displayResults = useMemo(
+    () => sortResultCards(results, searchSortBy),
+    [results, searchSortBy],
   );
 
   const persistSoon = useCallback(
@@ -153,14 +161,14 @@ export default function App() {
   const refreshCatalog = useCallback(async () => {
     setCatalogLoading(true);
     try {
-      const res = await fetchCorpusCatalog(40);
+      const res = await fetchCorpusCatalog(40, catalogSortBy);
       setCatalog(res.items);
     } catch {
       setCatalog([]);
     } finally {
       setCatalogLoading(false);
     }
-  }, []);
+  }, [catalogSortBy]);
 
   useEffect(() => {
     if (corpusOpen) {
@@ -176,11 +184,9 @@ export default function App() {
     }
 
     const controller = new AbortController();
-    const titles = recentChatTitles(conversations);
-    const queries = recentUserQueries(conversations);
 
     setSuggestionsLoading(true);
-    fetchSuggestions(titles, queries)
+    fetchSuggestions()
       .then((res) => {
         if (controller.signal.aborted) return;
         setSuggestions(res.suggestions);
@@ -196,7 +202,7 @@ export default function App() {
       });
 
     return () => controller.abort();
-  }, [messages.length, indexedCount, conversations]);
+  }, [messages.length, indexedCount]);
 
   const selectConversation = useCallback(
     (id: string, turnId?: string | null) => {
@@ -319,7 +325,12 @@ export default function App() {
     let streamedContent = "";
 
     try {
-      await sendChatStream(text, sessionId, effectiveTopK, effectiveMinMatchPercent, {
+      await sendChatStream(
+        text,
+        sessionId,
+        effectiveTopK,
+        effectiveMinMatchPercent,
+        {
         onMetadata: (meta) => {
           setSearchEventId(meta.search_event_id ?? null);
           updateConversations((prev) =>
@@ -380,7 +391,9 @@ export default function App() {
         onError: (detail) => {
           throw new Error(detail);
         },
-      });
+      },
+        searchSortBy,
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
@@ -514,6 +527,7 @@ export default function App() {
         topK,
         minMatchPercent,
         similarityAxis,
+        searchSortBy,
       ),
     );
   };
@@ -527,6 +541,7 @@ export default function App() {
         topK,
         minMatchPercent,
         similarityAxis,
+        searchSortBy,
       ),
     );
   };
@@ -662,9 +677,16 @@ export default function App() {
                 {results.length} image{results.length !== 1 ? "s" : ""}
               </span>
             )}
+            <div className="ml-auto">
+              <SortSelect
+                value={searchSortBy}
+                onChange={setSearchSortBy}
+                disabled={loading}
+              />
+            </div>
           </div>
           <ResultsGrid
-            results={results}
+            results={displayResults}
             loading={loading}
             onFindSimilar={handleSimilarFromResult}
             searchEventId={searchEventId}
@@ -706,6 +728,8 @@ export default function App() {
         ingestProgress={ingestProgress}
         catalog={catalog}
         catalogLoading={catalogLoading}
+        catalogSortBy={catalogSortBy}
+        onCatalogSortChange={setCatalogSortBy}
       />
     </div>
   );

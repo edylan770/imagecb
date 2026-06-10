@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Sequence
 
+from imagecb.caption.asset_type import format_asset_type_label
 from imagecb.formatting.match_display import display_match_percent
 from imagecb.paths import resolve_image_file, resolve_source_file
 from imagecb.retrieval.query_parser import QuerySpec
@@ -29,6 +30,7 @@ class Provenance:
     page_index: Optional[int] = None
     modified: Optional[str] = None  # ISO date
     author: Optional[str] = None
+    asset_type: str = ""
 
     def location_label(self) -> str:
         if self.source_type == "pptx" and self.slide_index is not None:
@@ -39,6 +41,9 @@ class Provenance:
 
     def chips(self) -> List[str]:
         out: List[str] = []
+        asset_label = format_asset_type_label(self.asset_type)
+        if asset_label:
+            out.append(asset_label)
         if self.source_type == "pptx" and self.slide_index is not None:
             out.append(f"Slide {self.slide_index}")
         elif self.source_type == "pdf" and self.page_index is not None:
@@ -72,6 +77,8 @@ class ResultCard:
     source_path: Optional[str] = None
     caption_quality: str = "ok"
     needs_regeneration: bool = False
+    created_at: Optional[str] = None
+    asset_type: str = ""
 
 
 @dataclass
@@ -105,6 +112,7 @@ def provenance_from_record(record: ImageRecord) -> Provenance:
         page_index=record.page_index,
         modified=modified,
         author=author,
+        asset_type=(record.asset_type or "").strip(),
     )
 
 
@@ -160,6 +168,9 @@ def build_result_cards(
             r.record
         )
         caption_quality, regen = _caption_quality_fields(r.record)
+        created_at: Optional[str] = None
+        if isinstance(r.record.created_at, datetime):
+            created_at = r.record.created_at.isoformat()
         cards.append(
             ResultCard(
                 rank=rank,
@@ -178,9 +189,11 @@ def build_result_cards(
                 aliases=aliases,
                 source_url=f"{source_url_prefix}/{r.image_id}" if src_path else None,
                 source_location=source_location_label(r.record),
-                source_path=str(src_path) if src_path else None,
+                source_path=str(src_path) if src_path else (r.record.source_file or None),
                 caption_quality=caption_quality,
                 needs_regeneration=regen,
+                created_at=created_at,
+                asset_type=(r.record.asset_type or "").strip(),
             )
         )
     return cards

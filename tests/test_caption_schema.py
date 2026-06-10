@@ -14,6 +14,7 @@ def _valid_nested() -> dict:
             "scene": "presentation slide",
             "readable_text": "Q3 2024",
             "text_read_uncertain": False,
+            "asset_type": "chart",
         },
         "interpretive": {
             "theme": "revenue growth",
@@ -43,6 +44,18 @@ def test_validate_caption_dict_rejects_incomplete():
     assert validate_caption_dict(data) is False
 
 
+def test_validate_caption_dict_rejects_invalid_asset_type():
+    data = _valid_nested()
+    data["grounded"]["asset_type"] = "meme"
+    assert validate_caption_dict(data) is False
+
+
+def test_validate_caption_dict_rejects_missing_asset_type():
+    data = _valid_nested()
+    del data["grounded"]["asset_type"]
+    assert validate_caption_dict(data) is False
+
+
 def test_validate_caption_dict_rejects_too_few_tags():
     data = _valid_nested()
     data["search"]["tags"] = ["chart"]
@@ -58,6 +71,7 @@ def test_caption_json_from_nested_dict():
     assert len(cap.recommended_cases) == 3
     assert cap.aliases == ["sales", "Q3 results"]
     assert cap.text_read_uncertain is False
+    assert cap.asset_type == "chart"
 
 
 def test_caption_json_from_legacy_flat_dict():

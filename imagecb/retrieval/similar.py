@@ -155,6 +155,7 @@ def search_similar(
     min_match_percent: int = 0,
     similarity_axis: str = "balanced",
     restrict_to: Optional[Sequence[str]] = None,
+    sort: Optional[str] = None,
 ) -> SimilarSearchOutcome:
     """Find images similar to a reference via visual embedding + VLM text query fusion."""
     top_k = max(1, min(int(top_k), 50))
@@ -207,4 +208,10 @@ def search_similar(
     )
     if exclude_image_id:
         results = [r for r in results if r.image_id != exclude_image_id]
+
+    from imagecb.retrieval.sort import resolve_sort, sort_ranked_results
+
+    resolved_sort = resolve_sort(sort, is_search=True)
+    results = sort_ranked_results(results, resolved_sort)
+
     return SimilarSearchOutcome(results=results, facets=facets, spec=spec)

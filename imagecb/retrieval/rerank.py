@@ -10,13 +10,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Literal, Optional, Sequence
+from typing import List, Literal, Optional, Sequence, TYPE_CHECKING
 
+from imagecb.caption.asset_type import format_asset_type_label
 from imagecb.config import SETTINGS
 from imagecb.models.reranker import get_reranker
 from imagecb.retrieval.hybrid import Candidate
 from imagecb.storage import metadata_db
 from imagecb.storage.metadata_db import ImageRecord, deserialize_list
+
+if TYPE_CHECKING:
+    from imagecb.retrieval.query_parser import QuerySpec
+
+_RERANK_MAX_TAGS = 8
+_RERANK_MAX_RECOMMENDED_CASES = 3
 
 
 @dataclass
@@ -47,9 +54,23 @@ class RankedResult:
 
 def _candidate_text(r: ImageRecord) -> str:
     parts: List[str] = []
+
+    asset_label = format_asset_type_label(r.asset_type)
+    if asset_label:
+        parts.append(f"asset_type: {asset_label}")
+
     for v in (
         r.scene,
         r.text_overlay_summary,
+    ):
+        if v:
+            parts.append(v)
+
+    objects = deserialize_list(r.objects_json)
+    if objects:
+        parts.append("objects: " + ", ".join(objects))
+
+    for v in (
         r.slide_title,
         r.slide_notes,
         r.slide_body_text,
@@ -57,27 +78,23 @@ def _candidate_text(r: ImageRecord) -> str:
     ):
         if v:
             parts.append(v)
-    objects = deserialize_list(r.objects_json)
-    if objects:
-        parts.append("objects: " + ", ".join(objects))
+
     for v in (
         r.image_name,
-        r.caption_detailed,
         r.caption_short,
         r.theme,
-        r.use_case,
     ):
         if v:
             parts.append(v)
+
     tags = deserialize_list(r.tags_json)
     if tags:
-        parts.append("tags: " + ", ".join(tags))
+        parts.append("tags: " + ", ".join(tags[:_RERANK_MAX_TAGS]))
+
     cases = deserialize_list(r.recommended_cases_json)
     if cases:
-        parts.append("recommended: " + "; ".join(cases))
-    aliases = deserialize_list(r.search_aliases_json)
-    if aliases:
-        parts.append("aliases: " + ", ".join(aliases))
+        parts.append("recommended: " + "; ".join(cases[:_RERANK_MAX_RECOMMENDED_CASES]))
+
     return "\n".join(parts)
 
 
@@ -105,6 +122,7 @@ def rerank(
     top_k: int,
     top_n: Optional[int] = None,
     min_score: float = 0.0,
+    spec: Optional["QuerySpec"] = None,
 ) -> List[RankedResult]:
     if not candidates:
         return []
@@ -131,6 +149,12 @@ def rerank(
         key=lambda r: r.score,
         reverse=True,
     )
+
+    if spec is not None:
+        from imagecb.retrieval.asset_type_boost import apply_asset_type_boost
+
+        ranked = apply_asset_type_boost(spec, ranked)
+
     if min_score > 0:
         ranked = [r for r in ranked if r.score >= min_score]
     from imagecb.retrieval.dedupe import dedupe_results

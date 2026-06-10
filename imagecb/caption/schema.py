@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from imagecb.caption.asset_type import ASSET_TYPES
+
 CAPTION_TOOL_NAME = "emit_caption"
 
 # JSON Schema for tool / structured output (all required fields populated).
@@ -35,8 +37,19 @@ CAPTION_JSON_SCHEMA: Dict[str, Any] = {
                     "type": "boolean",
                     "description": "True when text is present but partially illegible.",
                 },
+                "asset_type": {
+                    "type": "string",
+                    "enum": list(ASSET_TYPES),
+                    "description": "Visual format; exactly one value from the closed list.",
+                },
             },
-            "required": ["objects", "scene", "readable_text", "text_read_uncertain"],
+            "required": [
+                "objects",
+                "scene",
+                "readable_text",
+                "text_read_uncertain",
+                "asset_type",
+            ],
             "additionalProperties": False,
         },
         "interpretive": {
@@ -107,12 +120,14 @@ def validate_caption_dict(data: dict) -> bool:
     s = data.get("search")
     if not isinstance(g, dict) or not isinstance(i, dict) or not isinstance(s, dict):
         return False
-    for key in ("objects", "scene", "readable_text", "text_read_uncertain"):
+    for key in ("objects", "scene", "readable_text", "text_read_uncertain", "asset_type"):
         if key not in g:
             return False
     if not isinstance(g["objects"], list) or not isinstance(g["text_read_uncertain"], bool):
         return False
     if len(g["objects"]) < 1:
+        return False
+    if g.get("asset_type") not in ASSET_TYPES:
         return False
     for key in ("theme", "use_case", "short_caption", "detailed_description"):
         if key not in i:

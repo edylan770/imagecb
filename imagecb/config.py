@@ -86,7 +86,22 @@ class Settings:
     sparse_top_k: int = 50
     rrf_k: int = 60
     rerank_top_n: int = 50
+    short_query_max_tokens: int = field(
+        default_factory=lambda: int(_env("SHORT_QUERY_MAX_TOKENS", "2") or "2")
+    )
+    short_query_rerank_top_n: int = field(
+        default_factory=lambda: int(_env("SHORT_QUERY_RERANK_TOP_N", "100") or "100")
+    )
+    short_query_retrieval_top_k: int = field(
+        default_factory=lambda: int(_env("SHORT_QUERY_RETRIEVAL_TOP_K", "100") or "100")
+    )
+    embed_context_max_chars: int = field(
+        default_factory=lambda: int(_env("EMBED_CONTEXT_MAX_CHARS", "480") or "480")
+    )
     default_top_k: int = 10
+    asset_type_rerank_boost: float = field(
+        default_factory=lambda: float(_env("ASSET_TYPE_RERANK_BOOST", "1.10") or "1.10")
+    )
     enable_conversational_llm: bool = field(
         default_factory=lambda: (_env("ENABLE_CONVERSATIONAL_LLM", "true") or "true").lower()
         in ("1", "true", "yes", "on")
@@ -96,6 +111,12 @@ class Settings:
     )
     suggestions_limit: int = field(
         default_factory=lambda: int(_env("SUGGESTIONS_LIMIT", "4") or "4")
+    )
+    acronym_cache_path: Path = field(
+        default_factory=lambda: _abspath(
+            _env("ACRONYM_CACHE_PATH")
+            or str(_abspath(_env("DATA_DIR", "./data") or "./data") / "acronym_cache.json")
+        )
     )
 
     # Ingest performance

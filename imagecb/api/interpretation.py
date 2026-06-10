@@ -45,6 +45,8 @@ def build_interpretation_notes(
         carried: List[str] = []
         if sf.file_types:
             carried.append(f"types: {', '.join(sf.file_types)}")
+        if sf.asset_types:
+            carried.append(f"asset types: {', '.join(sf.asset_types)}")
         if sf.filename_contains:
             carried.append(f"filename contains: {', '.join(sf.filename_contains)}")
         if sf.authors:
@@ -60,5 +62,8 @@ def build_interpretation_notes(
         notes.append("Must include: " + ", ".join(spec.must_have_keywords) + ".")
     if spec.must_avoid_keywords:
         notes.append("Excluding: " + ", ".join(spec.must_avoid_keywords) + ".")
+
+    for note in spec.sanitization_notes:
+        notes.append(note)
 
     return notes

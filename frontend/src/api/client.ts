@@ -7,6 +7,7 @@ import type {
   CorpusCatalogResponse,
   IngestResponse,
   ParsedQuery,
+  ResultSort,
   SimilarResponse,
   StatusResponse,
   SuggestionsResponse,
@@ -61,19 +62,11 @@ export async function fetchStatus(): Promise<StatusResponse> {
   return request<StatusResponse>("/api/status");
 }
 
-export async function fetchSuggestions(
-  recentTitles: string[],
-  recentQueries: string[],
-  limit = 4,
-): Promise<SuggestionsResponse> {
+export async function fetchSuggestions(limit = 4): Promise<SuggestionsResponse> {
   return request<SuggestionsResponse>("/api/suggestions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      recent_titles: recentTitles,
-      recent_queries: recentQueries,
-      limit,
-    }),
+    body: JSON.stringify({ limit }),
   });
 }
 
@@ -82,6 +75,7 @@ export async function sendChat(
   sessionId: string | null,
   topK: number,
   minMatchPercent: number,
+  sort?: ResultSort,
 ): Promise<ChatResponse> {
   return request<ChatResponse>("/api/chat", {
     method: "POST",
@@ -91,6 +85,7 @@ export async function sendChat(
       session_id: sessionId,
       top_k: topK,
       min_match_percent: minMatchPercent,
+      sort,
     }),
   });
 }
@@ -133,6 +128,7 @@ export async function sendChatStream(
   topK: number,
   minMatchPercent: number,
   callbacks: ChatStreamCallbacks,
+  sort?: ResultSort,
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/api/chat/stream`, withUserHeaders({
     method: "POST",
@@ -142,6 +138,7 @@ export async function sendChatStream(
       session_id: sessionId,
       top_k: topK,
       min_match_percent: minMatchPercent,
+      sort,
     }),
   }));
 
@@ -305,10 +302,11 @@ export async function ingestFilesBatched(
 
 export async function fetchCorpusCatalog(
   limit = 40,
+  sort?: ResultSort,
 ): Promise<CorpusCatalogResponse> {
-  return request<CorpusCatalogResponse>(
-    `/api/corpus/catalog?limit=${encodeURIComponent(String(limit))}`,
-  );
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (sort) params.set("sort", sort);
+  return request<CorpusCatalogResponse>(`/api/corpus/catalog?${params.toString()}`);
 }
 
 export type SimilarityAxis = "balanced" | "subject" | "style" | "layout";
@@ -319,12 +317,14 @@ export async function searchSimilarByImage(
   topK: number,
   minMatchPercent: number,
   similarityAxis: SimilarityAxis = "balanced",
+  sort?: ResultSort,
 ): Promise<SimilarResponse> {
   const form = new FormData();
   form.append("file", imageFile);
   form.append("top_k", String(topK));
   form.append("min_match_percent", String(minMatchPercent));
   form.append("similarity_axis", similarityAxis);
+  if (sort) form.append("sort", sort);
   if (sessionId) form.append("session_id", sessionId);
   return request<SimilarResponse>("/api/similar", {
     method: "POST",
@@ -338,6 +338,7 @@ export async function searchSimilarByImageId(
   topK: number,
   minMatchPercent: number,
   similarityAxis: SimilarityAxis = "balanced",
+  sort?: ResultSort,
 ): Promise<SimilarResponse> {
   return request<SimilarResponse>("/api/similar", {
     method: "POST",
@@ -348,6 +349,7 @@ export async function searchSimilarByImageId(
       top_k: topK,
       min_match_percent: minMatchPercent,
       similarity_axis: similarityAxis,
+      sort,
     }),
   });
 }
@@ -358,6 +360,7 @@ export async function sendSimilar(
   topK: number,
   minMatchPercent: number,
   similarityAxis: SimilarityAxis = "balanced",
+  sort?: ResultSort,
 ): Promise<SimilarResponse> {
   return searchSimilarByImageId(
     imageId,
@@ -365,5 +368,6 @@ export async function sendSimilar(
     topK,
     minMatchPercent,
     similarityAxis,
+    sort,
   );
 }

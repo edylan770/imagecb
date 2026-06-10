@@ -23,6 +23,8 @@ from imagecb.telemetry.schema import ensure_telemetry_schema
 from imagecb.admin.audit import append_audit
 from imagecb.caption.quality import needs_regeneration
 
+_VALID_CAPTION_QUALITY_FILTERS = frozenset({"all", "ok", "weak", "failed"})
+
 
 def rebuild_bm25_active() -> None:
     bm25_index.rebuild_from_records(get_all_records(include_deleted=False))
@@ -116,25 +118,58 @@ def _all_interacted_image_ids() -> set[str]:
         return {r[0] for r in rows}
 
 
-def list_corpus_images() -> List[dict]:
+def corpus_health_summary() -> dict:
+    """Caption health counts for admin dashboard and corpus toolbar."""
+    from imagecb.repair import assess_index_health
+
+    report = assess_index_health(include_weak=True)
+    return {
+        "total_images": report.total_records,
+        "failed_caption_count": report.failed_caption_count,
+        "weak_caption_count": report.weak_caption_count,
+        "needs_regeneration_count": report.needs_regeneration_count,
+        "is_healthy": report.is_healthy,
+    }
+
+
+def list_corpus_images(
+    *,
+    sort: str = "newest",
+    caption_quality: Optional[str] = None,
+) -> List[dict]:
     """All active indexed images for admin corpus browser."""
-    active = get_all_records(include_deleted=False)
+    from imagecb.retrieval.sort import resolve_sort, sort_image_records
+
+    quality_filter = (caption_quality or "all").lower()
+    if quality_filter not in _VALID_CAPTION_QUALITY_FILTERS:
+        raise ValueError(
+            f"invalid caption_quality: {caption_quality!r}; "
+            f"expected one of {sorted(_VALID_CAPTION_QUALITY_FILTERS)}"
+        )
+
+    resolved = resolve_sort(sort, is_search=False)
+    active = sort_image_records(get_all_records(include_deleted=False), resolved)
     out: List[dict] = []
     for r in active:
         quality = (r.caption_quality or "ok").lower()
+        if quality_filter != "all" and quality != quality_filter:
+            continue
+        image_name = (r.image_name or "").strip() or Path(r.source_file or "").name
+        created_at = r.created_at.isoformat() if r.created_at else None
         out.append(
             {
                 "image_id": r.image_id,
                 "caption_short": r.caption_short,
-                "source_file": Path(r.source_file or "").name,
+                "image_name": image_name,
+                "source_file": r.source_file or "",
                 "source_type": r.source_type,
                 "author": r.author,
                 "image_url": f"/api/images/{r.image_id}",
                 "caption_quality": quality,
                 "needs_regeneration": needs_regeneration(quality),
+                "created_at": created_at,
             }
         )
-    out.sort(key=lambda x: (x.get("source_file") or "", x["image_id"]))
     return out
 
 

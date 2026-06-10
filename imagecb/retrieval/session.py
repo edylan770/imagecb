@@ -1,13 +1,8 @@
 """Multi-turn session state.
 
-Tracks:
-
-- (user, assistant) chat history (only short text summaries; results are
-  rendered separately by the UI).
-- The last `QuerySpec` (sticky source/time filters carry forward on
-  explicit refinement turns only).
-- The last ranked candidate pool, so refinement turns can restrict to it
-  instead of searching the whole index again.
+Tracks chat history, the last QuerySpec, and the last ranked results for
+follow-up query parsing context. Each search runs parse_query -> hybrid -> rerank
+over the full active corpus (no refinement pool restriction).
 """
 
 from __future__ import annotations
@@ -15,10 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
-from imagecb.config import SETTINGS
 from imagecb.retrieval.hybrid import search
-from imagecb.retrieval.query_build import rerank_query_text, should_restrict_to_previous
-from imagecb.retrieval.query_expand import expand_query_spec
+from imagecb.retrieval.query_build import rerank_query_text, resolve_rerank_top_n
 from imagecb.retrieval.query_parser import (
     QuerySpec,
     SourceFilters,
@@ -36,6 +29,7 @@ def _merge_filters(prev: QuerySpec, new: QuerySpec) -> QuerySpec:
     sf_prev = prev.source_filters
     merged_sf = SourceFilters(
         file_types=sf_new.file_types or list(sf_prev.file_types),
+        asset_types=sf_new.asset_types or list(sf_prev.asset_types),
         filename_contains=sf_new.filename_contains or list(sf_prev.filename_contains),
         authors=sf_new.authors or list(sf_prev.authors),
     )
@@ -56,6 +50,8 @@ def _filters_were_merged(prev: QuerySpec, merged: QuerySpec) -> bool:
     tf_prev, tf = prev.time_filter, merged.time_filter
     if sf.file_types != sf_prev.file_types and sf_prev.file_types:
         return True
+    if sf.asset_types != sf_prev.asset_types and sf_prev.asset_types:
+        return True
     if sf.filename_contains != sf_prev.filename_contains and sf_prev.filename_contains:
         return True
     if sf.authors != sf_prev.authors and sf_prev.authors:
@@ -70,7 +66,14 @@ def _filters_were_merged(prev: QuerySpec, merged: QuerySpec) -> bool:
 def has_metadata_filters(spec: QuerySpec) -> bool:
     sf = spec.source_filters
     tf = spec.time_filter
-    return bool(sf.file_types or sf.filename_contains or sf.authors or tf.before or tf.after)
+    return bool(
+        sf.file_types
+        or sf.asset_types
+        or sf.filename_contains
+        or sf.authors
+        or tf.before
+        or tf.after
+    )
 
 
 @dataclass
@@ -108,16 +111,13 @@ class ChatSession:
         *,
         top_k: Optional[int] = None,
         min_match_percent: int = 0,
+        sort: Optional[str] = None,
     ) -> AskResult:
         history_summary = summarize_history(self.history)
         session_ctx = build_session_context(self.last_spec, self.last_results)
         spec = parse_query(text, history_summary, session_context=session_ctx)
-        spec = expand_query_spec(spec)
 
         sticky_merged = False
-        if self.last_spec is not None and spec.is_refinement:
-            spec = _merge_filters(self.last_spec, spec)
-            sticky_merged = _filters_were_merged(self.last_spec, spec)
 
         if top_k is not None:
             spec.top_k = max(1, min(int(top_k), 50))
@@ -125,10 +125,8 @@ class ChatSession:
         min_score = max(0.0, min(float(min_match_percent) / 100.0, 1.0))
 
         pool_size = len(self.last_candidate_ids)
-        applied_pool = should_restrict_to_previous(spec, text, pool_size)
+        applied_pool = False
         restrict_to: Optional[List[str]] = None
-        if applied_pool:
-            restrict_to = list(self.last_candidate_ids)
 
         outcome = search(spec, restrict_to=restrict_to)
         candidates = outcome.candidates
@@ -138,7 +136,9 @@ class ChatSession:
             query_for_rerank,
             candidates,
             top_k=spec.top_k,
+            top_n=resolve_rerank_top_n(spec),
             min_score=min_score,
+            spec=spec,
         )
         relaxed_min_score = False
         filtered_by_min_score = False
@@ -148,9 +148,16 @@ class ChatSession:
                 query_for_rerank,
                 candidates,
                 top_k=spec.top_k,
+                top_n=resolve_rerank_top_n(spec),
                 min_score=0.0,
+                spec=spec,
             )
             relaxed_min_score = bool(results)
+
+        from imagecb.retrieval.sort import resolve_sort, sort_ranked_results
+
+        resolved_sort = resolve_sort(sort, is_search=True)
+        results = sort_ranked_results(results, resolved_sort)
 
         self.last_spec = spec
         self.last_results = list(results)

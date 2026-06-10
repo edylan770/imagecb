@@ -114,12 +114,16 @@ def get_index() -> BM25Index:
 
 def rebuild_from_records(records) -> None:
     """Rebuild and persist the index from current SQLite records."""
+    from imagecb.caption.asset_type import format_asset_type_label
+    from imagecb.storage.metadata_db import deserialize_list
+
     ids: List[str] = []
     texts: List[str] = []
     for r in records:
-        from imagecb.storage.metadata_db import deserialize_list
-
         grounded: List[str] = []
+        asset_label = format_asset_type_label(r.asset_type)
+        if asset_label:
+            grounded.append(f"asset_type: {asset_label}")
         for v in (
             r.scene,
             r.text_overlay_summary,

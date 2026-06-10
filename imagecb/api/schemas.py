@@ -37,6 +37,8 @@ class ResultCardOut(BaseModel):
     source_path: Optional[str] = None
     caption_quality: str = "ok"
     needs_regeneration: bool = False
+    created_at: Optional[str] = None
+    asset_type: str = ""
 
 
 class CatalogItemOut(BaseModel):
@@ -50,8 +52,11 @@ class CatalogItemOut(BaseModel):
     aliases: List[str] = Field(default_factory=list)
     caption: str = ""
     source_name: str = ""
+    source_file: str = ""
+    created_at: Optional[str] = None
     caption_quality: str = "ok"
     needs_regeneration: bool = False
+    asset_type: str = ""
 
 
 class CorpusCatalogResponse(BaseModel):
@@ -61,6 +66,7 @@ class CorpusCatalogResponse(BaseModel):
 
 class SourceFiltersOut(BaseModel):
     file_types: List[str] = Field(default_factory=list)
+    asset_types: List[str] = Field(default_factory=list)
     filename_contains: List[str] = Field(default_factory=list)
     authors: List[str] = Field(default_factory=list)
 
@@ -86,6 +92,7 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = None
     top_k: int = Field(default=10, ge=1, le=50)
     min_match_percent: int = Field(default=0, ge=0, le=100)
+    sort: Optional[str] = None
 
 
 class SimilarRequest(BaseModel):
@@ -94,6 +101,7 @@ class SimilarRequest(BaseModel):
     top_k: int = Field(default=10, ge=1, le=50)
     min_match_percent: int = Field(default=0, ge=0, le=100)
     similarity_axis: str = Field(default="balanced")
+    sort: Optional[str] = None
 
 
 class SimilarResponse(BaseModel):
@@ -133,8 +141,6 @@ class SessionResetResponse(BaseModel):
 
 
 class SuggestionsRequest(BaseModel):
-    recent_titles: List[str] = Field(default_factory=list, max_length=20)
-    recent_queries: List[str] = Field(default_factory=list, max_length=20)
     limit: int = Field(default=4, ge=2, le=8)
 
 
@@ -184,6 +190,7 @@ class DeckForceRequest(BaseModel):
     slide_index: int = Field(ge=1)
     top_k: int = Field(default=10, ge=1, le=30)
     min_match_percent: int = Field(default=0, ge=0, le=100)
+    sort: Optional[str] = None
 
 
 class DeckForceResponse(BaseModel):

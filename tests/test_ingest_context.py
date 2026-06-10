@@ -34,9 +34,19 @@ def test_embed_context_joins_slide_fields_when_no_interpretive():
 
 
 def test_embed_context_truncates_long_text():
-    long_notes = "x" * 300
+    long_notes = "x" * 600
     text = embed_context_text(slide_notes=long_notes)
-    assert len(text) <= 200
+    assert len(text) <= 480
+
+
+def test_embed_context_includes_use_case_and_tags():
+    text = embed_context_text(
+        short_caption="Team meeting",
+        use_case="internal communications",
+        tags=["presentation", "office", "collaboration"],
+    )
+    assert "internal communications" in text
+    assert "presentation" in text
 
 
 def test_embed_context_empty():

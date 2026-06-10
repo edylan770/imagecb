@@ -26,6 +26,7 @@ _GENERIC_PATTERNS = [
 
 def caption_json_from_record(record: ImageRecord) -> "CaptionJSON":
     """Rebuild CaptionJSON from a persisted SQLite row (no VLM call)."""
+    from imagecb.caption.asset_type import normalize_asset_type
     from imagecb.models.vlm import CaptionJSON, GroundedCaption, InterpretiveCaption, SearchTerms
 
     return CaptionJSON(
@@ -35,6 +36,7 @@ def caption_json_from_record(record: ImageRecord) -> "CaptionJSON":
             scene=(record.scene or "").strip(),
             readable_text=(record.text_overlay_summary or "").strip(),
             text_read_uncertain=bool(record.text_read_uncertain),
+            asset_type=normalize_asset_type(record.asset_type),
         ),
         interpretive=InterpretiveCaption(
             theme=(record.theme or "").strip(),

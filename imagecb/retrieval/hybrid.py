@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Sequence
 
 from imagecb.config import SETTINGS
 from imagecb.models.embedder import get_embedder
-from imagecb.retrieval.query_build import dense_query_text
+from imagecb.retrieval.query_build import dense_query_text, resolve_retrieval_top_k
 from imagecb.retrieval.query_parser import QuerySpec
 from imagecb.storage import bm25_index, metadata_db, vector_store
 
@@ -40,13 +40,20 @@ def _apply_metadata_filter(spec: QuerySpec, restrict_to: Optional[Sequence[str]]
     sf = spec.source_filters
     tf = spec.time_filter
     has_filters = bool(
-        sf.file_types or sf.filename_contains or sf.authors or tf.before or tf.after or restrict_to
+        sf.file_types
+        or sf.asset_types
+        or sf.filename_contains
+        or sf.authors
+        or tf.before
+        or tf.after
+        or restrict_to
     )
     if not has_filters:
         return None
 
     ids = metadata_db.filter_image_ids(
         file_types=sf.file_types or None,
+        asset_types=sf.asset_types or None,
         filename_contains=sf.filename_contains or None,
         authors=sf.authors or None,
         modified_after=tf.after,
@@ -101,8 +108,9 @@ def search(
     rrf_k: Optional[int] = None,
 ) -> SearchOutcome:
     """Run dense + sparse search and merge with RRF."""
-    dense_k = dense_top_k or SETTINGS.dense_top_k
-    sparse_k = sparse_top_k or SETTINGS.sparse_top_k
+    default_dense, default_sparse = resolve_retrieval_top_k(spec)
+    dense_k = dense_top_k if dense_top_k is not None else default_dense
+    sparse_k = sparse_top_k if sparse_top_k is not None else default_sparse
     rrf = rrf_k or SETTINGS.rrf_k
 
     allowed = _apply_metadata_filter(spec, restrict_to)

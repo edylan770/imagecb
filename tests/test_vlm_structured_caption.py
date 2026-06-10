@@ -25,6 +25,7 @@ def _valid_caption_dict() -> dict:
             "scene": "presentation slide",
             "readable_text": "Q3 2024",
             "text_read_uncertain": False,
+            "asset_type": "chart",
         },
         "interpretive": {
             "theme": "revenue growth",

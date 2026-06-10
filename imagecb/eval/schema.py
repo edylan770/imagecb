@@ -18,6 +18,7 @@ class TextCase(BaseModel):
     top_k: int = Field(default=10, ge=1, le=50)
     notes: Optional[str] = None
     template: bool = False
+    short_query: bool = False
 
     @field_validator("id")
     @classmethod

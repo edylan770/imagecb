@@ -16,6 +16,7 @@ CAPTION_FEW_SHOT_EXAMPLES: List[Tuple[str, Dict[str, Any]]] = [
                 "scene": "office meeting room",
                 "readable_text": "",
                 "text_read_uncertain": False,
+                "asset_type": "photo",
             },
             "interpretive": {
                 "theme": "workplace collaboration",
@@ -50,6 +51,7 @@ CAPTION_FEW_SHOT_EXAMPLES: List[Tuple[str, Dict[str, Any]]] = [
                 "scene": "white background infographic",
                 "readable_text": "Start, Review, Approve",
                 "text_read_uncertain": False,
+                "asset_type": "diagram",
             },
             "interpretive": {
                 "theme": "workflow process",
@@ -87,6 +89,7 @@ CAPTION_FEW_SHOT_EXAMPLES: List[Tuple[str, Dict[str, Any]]] = [
                 "scene": "presentation slide",
                 "readable_text": "Q3 2024",
                 "text_read_uncertain": False,
+                "asset_type": "chart",
             },
             "interpretive": {
                 "theme": "sales performance",

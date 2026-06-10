@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional, Set
 
+from imagecb.caption.asset_type import normalize_asset_type
 from imagecb.caption.context import caption_context_from_provenance
 from imagecb.caption.lexicon import (
     SearchLexicon,
@@ -33,7 +34,7 @@ def _apply_normalized_tags(
 
 
 def _enrich_search_terms(caption: CaptionJSON, lexicon: SearchLexicon) -> CaptionJSON:
-    """Add corpus-aligned aliases and recommended_cases from synonym groups."""
+    """Add corpus-aligned aliases; dedupe and strip boilerplate from recommended_cases."""
     tags = list(caption.search.tags)
     caption.search.aliases = enrich_aliases_for_tags(
         tags,
@@ -45,6 +46,7 @@ def _enrich_search_terms(caption: CaptionJSON, lexicon: SearchLexicon) -> Captio
         caption.theme,
         existing_cases=list(caption.search.recommended_cases),
         lexicon=lexicon,
+        asset_type=caption.grounded.asset_type,
     )
     return caption
 
@@ -79,6 +81,7 @@ def generate_caption(
         )
         if cap.short_caption == "[caption failed]":
             return cap
+        cap.grounded.asset_type = normalize_asset_type(cap.grounded.asset_type)
         cap = _apply_normalized_tags(cap, vocab, lexicon)
         cap = _enrich_search_terms(cap, lexicon)
         quality = assess_caption(cap)

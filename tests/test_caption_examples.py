@@ -29,6 +29,8 @@ def test_build_caption_user_prompt_includes_examples():
     assert "Style reference" in prompt
     assert "Example 1" in prompt
     assert "quarterly sales chart" in prompt.lower()
+    assert "Asset type taxonomy" in prompt
+    assert '"asset_type":"photo"' in prompt.replace(" ", "")
 
 
 def test_few_shot_tags_are_lowercase_singular():

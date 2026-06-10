@@ -184,6 +184,7 @@ def _record_for(
         slide_body_text=slide_body_from_provenance(p) or None,
         caption_quality=caption.caption_quality or "ok",
         text_read_uncertain=1 if caption.text_read_uncertain else 0,
+        asset_type=caption.asset_type or None,
     )
 
 

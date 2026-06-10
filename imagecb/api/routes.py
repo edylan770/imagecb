@@ -58,6 +58,7 @@ from imagecb.retrieval.image_query import SimilarityAxis, axis_label
 from imagecb.retrieval.query_parser import QuerySpec
 from imagecb.retrieval.session import AskResult
 from imagecb.retrieval.similar import search_similar
+from imagecb.retrieval.sort import InvalidSortError, ResultSort, resolve_sort
 from imagecb.storage import metadata_db, vector_store
 from imagecb.suggestions import generate_suggestions
 from imagecb.uploads import save_uploads_from_files
@@ -78,6 +79,13 @@ _SOURCE_MEDIA = {
     ".tif": "image/tiff",
     ".tiff": "image/tiff",
 }
+
+
+def _resolve_sort_param(sort: Optional[str], *, is_search: bool) -> ResultSort:
+    try:
+        return resolve_sort(sort, is_search=is_search)
+    except InvalidSortError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _result_card_from_dict(d: dict) -> ResultCardOut:
@@ -110,6 +118,8 @@ def _result_card_from_dict(d: dict) -> ResultCardOut:
         source_path=d.get("source_path"),
         caption_quality=str(d.get("caption_quality", "ok")),
         needs_regeneration=bool(d.get("needs_regeneration", False)),
+        created_at=d.get("created_at"),
+        asset_type=str(d.get("asset_type", "")),
     )
 
 
@@ -169,6 +179,8 @@ def _result_card_out(card) -> ResultCardOut:
         source_path=card.source_path,
         caption_quality=card.caption_quality,
         needs_regeneration=card.needs_regeneration,
+        created_at=card.created_at,
+        asset_type=card.asset_type,
     )
 
 
@@ -195,16 +207,8 @@ def status() -> StatusResponse:
 
 
 @router.post("/suggestions", response_model=SuggestionsResponse)
-def suggestions(
-    body: SuggestionsRequest,
-    user_id: str = Depends(resolve_user_id),
-) -> SuggestionsResponse:
-    result = generate_suggestions(
-        body.recent_titles,
-        recent_queries=body.recent_queries,
-        user_id=user_id,
-        limit=body.limit,
-    )
+def suggestions(body: SuggestionsRequest) -> SuggestionsResponse:
+    result = generate_suggestions(limit=body.limit)
     return SuggestionsResponse(
         suggestions=result.suggestions,
         cached=result.cached,
@@ -247,6 +251,7 @@ def chat(
             message,
             top_k=body.top_k,
             min_match_percent=body.min_match_percent,
+            sort=body.sort,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Query failed")
@@ -309,6 +314,7 @@ def chat_stream(
             message,
             top_k=body.top_k,
             min_match_percent=body.min_match_percent,
+            sort=body.sort,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Query failed")
@@ -398,6 +404,7 @@ async def similar(
     k = 10
     min_pct = 0
     axis = "balanced"
+    sort_param: Optional[str] = None
 
     content_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
@@ -407,6 +414,7 @@ async def similar(
         k = body.top_k
         min_pct = body.min_match_percent
         axis = body.similarity_axis
+        sort_param = body.sort
     else:
         form = await request.form()
         raw_id = form.get("image_id")
@@ -424,6 +432,9 @@ async def similar(
         raw_axis = form.get("similarity_axis")
         if raw_axis:
             axis = str(raw_axis)
+        raw_sort = form.get("sort")
+        if raw_sort:
+            sort_param = str(raw_sort)
 
         file = form.get("file")
         if file is not None and hasattr(file, "read"):
@@ -447,6 +458,8 @@ async def similar(
     if not ref_id and upload_image is None:
         raise HTTPException(status_code=400, detail="image_id or image file is required")
 
+    _resolve_sort_param(sort_param, is_search=True)
+
     try:
         outcome = search_similar(
             image_id=ref_id,
@@ -455,6 +468,7 @@ async def similar(
             exclude_image_id=ref_id,
             min_match_percent=min_pct,
             similarity_axis=axis,
+            sort=sort_param,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -571,15 +585,17 @@ def get_source(image_id: str) -> FileResponse:
 
 
 @router.get("/corpus/catalog", response_model=CorpusCatalogResponse)
-def corpus_catalog(limit: int = 40) -> CorpusCatalogResponse:
+def corpus_catalog(limit: int = 40, sort: Optional[str] = None) -> CorpusCatalogResponse:
     """Recently ingested images with catalog metadata (name, tags, use cases)."""
+    resolved = _resolve_sort_param(sort, is_search=False)
     limit = max(1, min(limit, 200))
-    records = metadata_db.get_recent_records(limit)
+    records = metadata_db.list_catalog_records(limit, sort=resolved)
     items: List[CatalogItemOut] = []
     for r in records:
         image_name, use_case, tags, recommended, theme, aliases = catalog_fields_from_record(r)
         prov = provenance_from_record(r)
         quality = (r.caption_quality or "ok").lower()
+        created_at = r.created_at.isoformat() if r.created_at else None
         items.append(
             CatalogItemOut(
                 image_id=r.image_id,
@@ -592,8 +608,11 @@ def corpus_catalog(limit: int = 40) -> CorpusCatalogResponse:
                 aliases=aliases,
                 caption=_display_caption(r),
                 source_name=prov.source_name,
+                source_file=r.source_file or "",
+                created_at=created_at,
                 caption_quality=quality,
                 needs_regeneration=needs_regeneration(quality),
+                asset_type=(r.asset_type or "").strip(),
             )
         )
     try:
@@ -676,6 +695,7 @@ async def deck_suggest(
     file: UploadFile = File(...),
     top_k: int = Form(10),
     min_match_percent: int = Form(0),
+    sort: Optional[str] = Form(None),
     user_id: str = Depends(resolve_user_id),  # noqa: ARG001
 ) -> DeckSuggestResponse:
     """Suggest corpus images per slide from an uploaded PowerPoint deck."""
@@ -690,6 +710,7 @@ async def deck_suggest(
 
     k = max(1, min(int(top_k), 30))
     min_pct = max(0, min(int(min_match_percent), 100))
+    _resolve_sort_param(sort, is_search=True)
 
     try:
         result = process_deck_upload(
@@ -697,6 +718,7 @@ async def deck_suggest(
             file.filename,
             top_k=k,
             min_match_percent=min_pct,
+            sort=sort,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -715,6 +737,7 @@ def deck_force(
     """Force image suggestion for a slide marked no_image_needed."""
     k = max(1, min(int(body.top_k), 30))
     min_pct = max(0, min(int(body.min_match_percent), 100))
+    _resolve_sort_param(body.sort, is_search=True)
 
     try:
         slide = force_slide_image(
@@ -722,6 +745,7 @@ def deck_force(
             body.slide_index,
             top_k=k,
             min_match_percent=min_pct,
+            sort=body.sort,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

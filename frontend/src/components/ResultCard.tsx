@@ -28,6 +28,10 @@ export function ResultCard({
   const displayName =
     card.image_name || card.provenance.source_name || "this image";
 
+  const assetTypeLabel = card.asset_type
+    ? card.asset_type.charAt(0).toUpperCase() + card.asset_type.slice(1)
+    : "";
+
   const track = (type: "view" | "download" | "similar") => {
     if (searchEventId) {
       void recordInteraction(searchEventId, card.image_id, type, card.rank);
@@ -99,6 +103,11 @@ export function ResultCard({
           </p>
         )}
         <div className="flex flex-wrap gap-0.5">
+          {assetTypeLabel && (
+            <span className="rounded bg-navy-200 px-1.5 py-px text-[9px] font-semibold text-navy-800">
+              {assetTypeLabel}
+            </span>
+          )}
           {card.provenance.chips.slice(0, 3).map((chip) => (
             <span
               key={chip}
