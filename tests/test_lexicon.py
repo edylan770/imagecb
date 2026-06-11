@@ -99,6 +99,19 @@ def test_enrich_recommended_cases_strips_boilerplate_not_vlm_cases():
     assert enrich_recommended_cases(["sales"], "performance", lexicon=lex) == []
 
 
+def test_enrich_recommended_cases_strips_bare_format_when_asset_type_set():
+    lex = _lexicon({"cloud", "diagram"})
+    out = enrich_recommended_cases(
+        ["cloud"],
+        "systems",
+        existing_cases=["diagram", "cloud systems diagram"],
+        lexicon=lex,
+        asset_type="diagram",
+    )
+    assert "diagram" not in out
+    assert "cloud systems diagram" in out
+
+
 def test_expand_query_spec_adds_keywords():
     clear_acronym_cache()
     lex = _lexicon({"revenue", "dashboard"})
