@@ -27,7 +27,7 @@ def _record(image_id: str) -> ImageRecord:
         slide_notes=None,
         ocr_text=None,
         caption_short="Test caption",
-        caption_detailed="Long detailed caption that should not appear in rerank doc",
+        caption_detailed="Long detailed caption describing the cloud diagram in depth",
         objects_json=serialize_list(["server", "database"]),
         tags_json=serialize_list(["diagram", "architecture", "cloud", "network", "api", "data", "flow", "system"]),
         scene="cloud architecture",
@@ -52,12 +52,21 @@ def test_candidate_text_includes_asset_type_and_caps_search_fields():
     text = _candidate_text(_record("x"))
     assert "asset_type: Diagram" in text
     assert "cloud architecture" in text
-    assert "Long detailed caption" not in text
-    assert "technical documentation" not in text
-    assert "schematic" not in text
+    assert "Long detailed caption" in text
+    assert "technical documentation" in text
+    assert "aliases: schematic, flowchart" in text
     assert text.count("recommended:") == 1
     assert "bare diagram" not in text
     assert "network topology" in text
+
+
+def test_candidate_text_caps_ocr_length():
+    record = _record("x")
+    record.ocr_text = "word " * 500
+    text = _candidate_text(record)
+    start = text.index("word")
+    ocr_block = text[start:].splitlines()[0]
+    assert len(ocr_block) <= 600
 
 
 @patch("imagecb.retrieval.rerank.get_reranker")

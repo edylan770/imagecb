@@ -73,7 +73,7 @@ def test_rerank_min_score_zero_returns_all(mock_get_records, mock_get_reranker):
     assert len(results) == 2
 
 
-def test_candidate_text_includes_theme_not_aliases():
+def test_candidate_text_includes_theme_and_aliases():
     record = _record("x")
     record.theme = "financial reporting"
     record.search_aliases_json = serialize_list(["sales", "earnings"])
@@ -83,5 +83,4 @@ def test_candidate_text_includes_theme_not_aliases():
     assert "asset_type: Chart" in text
     assert "financial reporting" in text
     assert "Quarterly metrics" in text
-    assert "aliases:" not in text
-    assert "earnings" not in text
+    assert "aliases: sales, earnings" in text

@@ -59,6 +59,7 @@ def test_rescan_skips_unchanged(mock_persist, mock_get_all):
     mock_persist.assert_not_called()
 
 
+@patch("imagecb.repair.refresh_text_vector", return_value=True)
 @patch("imagecb.repair.bm25_index.rebuild_from_records")
 @patch("imagecb.repair._upsert_record_embedding")
 @patch("imagecb.repair._persist_record")
@@ -74,6 +75,7 @@ def test_regenerate_caption_reembeds(
     mock_persist,
     mock_upsert,
     mock_bm25,
+    mock_text_vector,
 ):
     record = _make_record(caption_quality="weak")
     mock_get_record.return_value = record
@@ -108,6 +110,7 @@ def test_regenerate_caption_reembeds(
     mock_bm25.assert_called_once()
 
 
+@patch("imagecb.repair.refresh_text_vector", return_value=True)
 @patch("imagecb.repair.bm25_index.rebuild_from_records")
 @patch("imagecb.repair._upsert_record_embedding")
 @patch("imagecb.repair.get_embedder")
@@ -119,6 +122,7 @@ def test_reindex_image_reembeds(
     mock_get_embedder,
     mock_upsert,
     mock_bm25,
+    mock_text_vector,
 ):
     record = _make_record(caption_short="Stored caption", caption_quality="ok")
     mock_get_record.return_value = record

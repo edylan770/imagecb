@@ -114,45 +114,13 @@ def get_index() -> BM25Index:
 
 def rebuild_from_records(records) -> None:
     """Rebuild and persist the index from current SQLite records."""
-    from imagecb.caption.asset_type import format_asset_type_label
-    from imagecb.storage.metadata_db import deserialize_list
+    from imagecb.caption.document import caption_document_text
 
     ids: List[str] = []
     texts: List[str] = []
     for r in records:
-        grounded: List[str] = []
-        asset_label = format_asset_type_label(r.asset_type)
-        if asset_label:
-            grounded.append(f"asset_type: {asset_label}")
-        for v in (
-            r.scene,
-            r.text_overlay_summary,
-            r.ocr_text,
-            r.slide_title,
-            r.slide_notes,
-            r.slide_body_text,
-        ):
-            if v:
-                grounded.append(v)
-        grounded.extend(deserialize_list(r.objects_json))
-
-        interpretive: List[str] = []
-        for v in (
-            r.image_name,
-            r.caption_short,
-            r.caption_detailed,
-            r.theme,
-            r.use_case,
-        ):
-            if v:
-                interpretive.append(v)
-        interpretive.extend(deserialize_list(r.tags_json))
-        interpretive.extend(deserialize_list(r.recommended_cases_json))
-        interpretive.extend(deserialize_list(r.search_aliases_json))
-
-        parts = grounded + interpretive
         ids.append(r.image_id)
-        texts.append(" \n ".join(parts))
+        texts.append(caption_document_text(r))
 
     idx = get_index()
     idx.build(ids, texts)

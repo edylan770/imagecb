@@ -35,9 +35,10 @@ from imagecb.config import SETTINGS
 from imagecb.extractors.dispatch import extract_path, iter_corpus
 from imagecb.extractors.types import ExtractedImage
 from imagecb.caption.context import slide_body_from_provenance
+from imagecb.caption.document import caption_document_text
 from imagecb.caption.pipeline import generate_caption, refresh_vocab_cache
 from imagecb.ingest_context import embed_context_from_caption_and_provenance
-from imagecb.models.embedder import BedrockEmbedder, get_embedder
+from imagecb.models.embedder import BedrockEmbedder, get_embedder, get_text_embedder
 from imagecb.models.ocr import extract_text as ocr_extract
 from imagecb.models.vlm import CaptionJSON, VLMCaptioner, get_captioner
 from imagecb.storage import bm25_index, vector_store
@@ -81,7 +82,22 @@ class _IngestOutcome:
     updated: bool = False
     record: Optional[ImageRecord] = None
     embedding: Optional[np.ndarray] = None
+    text_embedding: Optional[np.ndarray] = None
     error: Optional[str] = None
+
+
+def embed_caption_document(record: ImageRecord) -> Optional[np.ndarray]:
+    """Embed the record's caption document for the text dense lane (fail-soft)."""
+    if not SETTINGS.caption_text_lane_enabled:
+        return None
+    doc = caption_document_text(record).strip()
+    if not doc:
+        return None
+    try:
+        return get_text_embedder().embed_document(doc)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Caption-text embedding failed for %s: %s", record.image_id, exc)
+        return None
 
 
 def _empty_stats(*, workers: int = 1) -> dict:
@@ -257,6 +273,7 @@ def _ingest_one_image(
             known.add(content_hash)
         outcome.record = record
         outcome.embedding = emb
+        outcome.text_embedding = embed_caption_document(record)
         return outcome
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to ingest an image from %s: %s", item.file_path, exc)
@@ -270,6 +287,14 @@ def _flush_chroma_batch(batch: List[Tuple[str, np.ndarray, dict]]) -> None:
     embeddings = np.stack([b[1] for b in batch])
     metadatas = [b[2] for b in batch]
     vector_store.upsert(image_ids=ids, embeddings=embeddings, metadatas=metadatas)
+
+
+def _flush_text_batch(batch: List[Tuple[str, np.ndarray]]) -> None:
+    if not batch:
+        return
+    ids = [b[0] for b in batch]
+    embeddings = np.stack([b[1] for b in batch])
+    vector_store.upsert_text(image_ids=ids, embeddings=embeddings)
 
 
 def _collect_work_items(paths: Iterable[Path]) -> Tuple[List[_IngestWorkItem], int]:
@@ -303,6 +328,7 @@ def _apply_outcome(
     *,
     stats: dict,
     chroma_batch: List[Tuple[str, np.ndarray, dict]],
+    text_batch: List[Tuple[str, np.ndarray]],
     chroma_lock: threading.Lock,
     batch_upsert: int,
 ) -> None:
@@ -324,6 +350,7 @@ def _apply_outcome(
             stats["captions_failed"] += 1
     if outcome.record is not None and outcome.embedding is not None:
         pending: Optional[List[Tuple[str, np.ndarray, dict]]] = None
+        pending_text: Optional[List[Tuple[str, np.ndarray]]] = None
         with chroma_lock:
             chroma_batch.append(
                 (
@@ -332,11 +359,17 @@ def _apply_outcome(
                     _chroma_metadata(outcome.record),
                 )
             )
+            if outcome.text_embedding is not None:
+                text_batch.append((outcome.record.image_id, outcome.text_embedding))
             if len(chroma_batch) >= batch_upsert:
                 pending = list(chroma_batch)
                 chroma_batch.clear()
+                pending_text = list(text_batch)
+                text_batch.clear()
         if pending:
             _flush_chroma_batch(pending)
+        if pending_text:
+            _flush_text_batch(pending_text)
 
 
 def _finalize_ingest(*, rebuild_bm25: bool, refresh_vocab: bool) -> None:
@@ -356,6 +389,7 @@ def _drain_future(
     *,
     stats: dict,
     chroma_batch: List[Tuple[str, np.ndarray, dict]],
+    text_batch: List[Tuple[str, np.ndarray]],
     chroma_lock: threading.Lock,
     batch_upsert: int,
     image_timeout_sec: int,
@@ -375,6 +409,7 @@ def _drain_future(
         outcome,
         stats=stats,
         chroma_batch=chroma_batch,
+        text_batch=text_batch,
         chroma_lock=chroma_lock,
         batch_upsert=batch_upsert,
     )
@@ -398,6 +433,7 @@ def _run_ingest_pool(
     total_images: Optional[int] = None,
 ) -> None:
     chroma_batch: List[Tuple[str, np.ndarray, dict]] = []
+    text_batch: List[Tuple[str, np.ndarray]] = []
     chroma_lock = threading.Lock()
 
     def _submit(item: _IngestWorkItem) -> _IngestOutcome:
@@ -434,6 +470,7 @@ def _run_ingest_pool(
                         queued_item,
                         stats=stats,
                         chroma_batch=chroma_batch,
+                        text_batch=text_batch,
                         chroma_lock=chroma_lock,
                         batch_upsert=batch_upsert,
                         image_timeout_sec=image_timeout_sec,
@@ -448,6 +485,7 @@ def _run_ingest_pool(
                     queued_item,
                     stats=stats,
                     chroma_batch=chroma_batch,
+                    text_batch=text_batch,
                     chroma_lock=chroma_lock,
                     batch_upsert=batch_upsert,
                     image_timeout_sec=image_timeout_sec,
@@ -460,6 +498,9 @@ def _run_ingest_pool(
         if chroma_batch:
             _flush_chroma_batch(list(chroma_batch))
             chroma_batch.clear()
+        if text_batch:
+            _flush_text_batch(list(text_batch))
+            text_batch.clear()
 
 
 def ingest_paths(

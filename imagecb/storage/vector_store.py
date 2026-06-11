@@ -1,44 +1,50 @@
-"""Chroma-backed dense vector store.
+"""Chroma-backed dense vector stores.
 
-Stores one record per image_id with the Bedrock Titan embedding plus a
-compact subset of provenance metadata so Chroma can apply `where`
-filters server-side.
+Two collections, one record per image_id each:
+- image embeddings (Titan multimodal) with compact provenance metadata
+  so Chroma can apply `where` filters server-side;
+- caption-document text embeddings for the text-to-text dense lane.
 """
 
 from __future__ import annotations
 
-from typing import Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
 
 from imagecb.config import SETTINGS
 
-_COLLECTION = "imagecb_images"
+_IMAGE_COLLECTION = "imagecb_images"
+_CAPTION_TEXT_COLLECTION = "imagecb_caption_text"
 
 
 _client = None
-_collection = None
+_collections: Dict[str, object] = {}
 
 
-def _get_collection():
-    global _client, _collection
-    if _collection is not None:
-        return _collection
+def _get_collection(name: str = _IMAGE_COLLECTION):
+    global _client
+    col = _collections.get(name)
+    if col is not None:
+        return col
     import chromadb
     from chromadb.config import Settings as ChromaSettings
 
-    _client = chromadb.PersistentClient(
-        path=str(SETTINGS.chroma_dir),
-        settings=ChromaSettings(anonymized_telemetry=False),
-    )
-    _collection = _client.get_or_create_collection(
-        name=_COLLECTION,
+    if _client is None:
+        _client = chromadb.PersistentClient(
+            path=str(SETTINGS.chroma_dir),
+            settings=ChromaSettings(anonymized_telemetry=False),
+        )
+    col = _client.get_or_create_collection(
+        name=name,
         metadata={"hnsw:space": "cosine"},
     )
-    return _collection
+    _collections[name] = col
+    return col
 
 
-def upsert(
+def _upsert(
+    name: str,
     *,
     image_ids: Sequence[str],
     embeddings: np.ndarray,
@@ -46,7 +52,7 @@ def upsert(
 ) -> None:
     if not image_ids:
         return
-    col = _get_collection()
+    col = _get_collection(name)
     col.upsert(
         ids=list(image_ids),
         embeddings=[e.tolist() for e in embeddings],
@@ -54,13 +60,14 @@ def upsert(
     )
 
 
-def query(
+def _query(
+    name: str,
     query_embedding: np.ndarray,
     *,
     top_k: int,
     allowed_ids: Optional[Iterable[str]] = None,
 ) -> List[tuple[str, float]]:
-    col = _get_collection()
+    col = _get_collection(name)
     where = None
     if allowed_ids is not None:
         ids_list = list(allowed_ids)
@@ -79,21 +86,8 @@ def query(
     return [(i, 1.0 - float(d)) for i, d in zip(ids, distances)]
 
 
-def count() -> int:
-    col = _get_collection()
-    return col.count()
-
-
-def delete(image_ids: Sequence[str]) -> None:
-    if not image_ids:
-        return
-    col = _get_collection()
-    col.delete(ids=list(image_ids))
-
-
-def list_ids(*, batch_size: int = 500) -> set[str]:
-    """Return all image_id values present in the Chroma collection."""
-    col = _get_collection()
+def _list_ids(name: str, *, batch_size: int = 500) -> set[str]:
+    col = _get_collection(name)
     n = col.count()
     if n == 0:
         return set()
@@ -116,11 +110,79 @@ def list_ids(*, batch_size: int = 500) -> set[str]:
     return out
 
 
+# --- Image embedding collection ---
+
+
+def upsert(
+    *,
+    image_ids: Sequence[str],
+    embeddings: np.ndarray,
+    metadatas: Sequence[dict],
+) -> None:
+    _upsert(_IMAGE_COLLECTION, image_ids=image_ids, embeddings=embeddings, metadatas=metadatas)
+
+
+def query(
+    query_embedding: np.ndarray,
+    *,
+    top_k: int,
+    allowed_ids: Optional[Iterable[str]] = None,
+) -> List[tuple[str, float]]:
+    return _query(_IMAGE_COLLECTION, query_embedding, top_k=top_k, allowed_ids=allowed_ids)
+
+
+def count() -> int:
+    return _get_collection(_IMAGE_COLLECTION).count()
+
+
+def delete(image_ids: Sequence[str]) -> None:
+    if not image_ids:
+        return
+    _get_collection(_IMAGE_COLLECTION).delete(ids=list(image_ids))
+
+
+def list_ids(*, batch_size: int = 500) -> set[str]:
+    """Return all image_id values present in the image collection."""
+    return _list_ids(_IMAGE_COLLECTION, batch_size=batch_size)
+
+
+# --- Caption-text embedding collection ---
+
+
+def upsert_text(*, image_ids: Sequence[str], embeddings: np.ndarray) -> None:
+    _upsert(
+        _CAPTION_TEXT_COLLECTION,
+        image_ids=image_ids,
+        embeddings=embeddings,
+        metadatas=[{"image_id": i} for i in image_ids],
+    )
+
+
+def query_text(
+    query_embedding: np.ndarray,
+    *,
+    top_k: int,
+    allowed_ids: Optional[Iterable[str]] = None,
+) -> List[tuple[str, float]]:
+    return _query(_CAPTION_TEXT_COLLECTION, query_embedding, top_k=top_k, allowed_ids=allowed_ids)
+
+
+def delete_text(image_ids: Sequence[str]) -> None:
+    if not image_ids:
+        return
+    _get_collection(_CAPTION_TEXT_COLLECTION).delete(ids=list(image_ids))
+
+
+def list_text_ids(*, batch_size: int = 500) -> set[str]:
+    """Return all image_id values present in the caption-text collection."""
+    return _list_ids(_CAPTION_TEXT_COLLECTION, batch_size=batch_size)
+
+
 def get_embeddings(image_ids: Sequence[str]) -> dict[str, np.ndarray]:
-    """Return stored embeddings for the given image IDs."""
+    """Return stored image embeddings for the given image IDs."""
     if not image_ids:
         return {}
-    col = _get_collection()
+    col = _get_collection(_IMAGE_COLLECTION)
     res = col.get(ids=list(image_ids), include=["embeddings"])
     out: dict[str, np.ndarray] = {}
     ids = res.get("ids") or []
@@ -150,8 +212,8 @@ def get_embeddings(image_ids: Sequence[str]) -> dict[str, np.ndarray]:
 
 
 def get_all_embeddings(*, batch_size: int = 500) -> List[tuple[str, np.ndarray]]:
-    """Return (image_id, embedding) for all vectors in the collection."""
-    col = _get_collection()
+    """Return (image_id, embedding) for all vectors in the image collection."""
+    col = _get_collection(_IMAGE_COLLECTION)
     n = col.count()
     if n == 0:
         return []

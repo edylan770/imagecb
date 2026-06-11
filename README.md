@@ -12,25 +12,28 @@ Every image is:
   **AWS Bedrock** Claude Haiku 4.5
   (`us.anthropic.claude-haiku-4-5-20251001-v1:0`); OpenAI and Anthropic
   are also supported as drop-in providers.
-- Indexed in **ChromaDB** (dense), **rank-bm25** (sparse over caption +
-  OCR + slide context), and **SQLite** (provenance + filters).
+- Indexed in **ChromaDB** (dense image vectors plus a caption-text
+  vector lane), **rank-bm25** (sparse over caption + OCR + slide
+  context), and **SQLite** (provenance + filters).
 
 User turns are parsed by an LLM into a structured `QuerySpec`
 (semantic phrase, time window, source/author filters, must-have /
-must-avoid keywords, refinement flag). The system fuses dense + sparse
-hits with Reciprocal Rank Fusion, reranks with **Cohere Rerank 3.5**
+must-avoid keywords, refinement flag). The system fuses three lanes —
+visual dense, caption-text dense, and sparse BM25 — with Reciprocal
+Rank Fusion, reranks with **Cohere Rerank 3.5**
 on Bedrock (`cohere.rerank-v3-5:0`), and renders results with
 full provenance (e.g. `Slide 7 of Q3_Review.pptx, modified 2026-05-08`).
 
 ## Architecture at a glance
 
 ```
-ingest:  files -> extractor (pptx/pdf/image) -> OCR + VLM caption + Titan image emb
+ingest:  files -> extractor (pptx/pdf/image) -> OCR + VLM caption
+                                              -> Titan image emb + caption-text emb
                                               -> SQLite + Chroma + BM25
 
 query:   text + history -> LLM QuerySpec
                         -> metadata filter
-                        -> dense (Titan text -> Chroma) + sparse (BM25)
+                        -> visual dense + caption-text dense + sparse (BM25)
                         -> RRF fusion
                         -> Cohere Rerank 3.5 rerank
                         -> ranked images + provenance
@@ -75,12 +78,13 @@ The default config drives **all** model calls through AWS Bedrock:
 | Role | Model | API |
 |------|-------|-----|
 | Image + text embeddings | `amazon.titan-embed-image-v1` | `invoke_model` |
+| Caption-text embeddings | `amazon.titan-embed-text-v2:0` | `invoke_model` |
 | VLM captioning | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | `converse` |
 | Query parsing | same | `converse` |
 | Reranking | `cohere.rerank-v3-5:0` | `invoke_model` |
 
 1. In the AWS Bedrock console for `us-east-1`, enable model access for
-   all four models listed above.
+   all five models listed above.
 2. Copy `.env.example` to `.env`:
 
    ```powershell
@@ -105,8 +109,8 @@ The default config drives **all** model calls through AWS Bedrock:
    different Bedrock region (you'll then also need a matching inference
    profile prefix, e.g. `eu.anthropic...` for EU regions).
 
-Ingest makes **two Bedrock calls per image** (Titan embed + Claude
-caption). Cost scales per image and per token. For a fast dry-run that
+Ingest makes **three Bedrock calls per image** (Titan image embed +
+Claude caption + caption-text embed). Cost scales per image and per token. For a fast dry-run that
 skips captioning, see `--skip-caption` under [Usage](#usage) (the Titan
 embed call still runs — search requires it).
 
@@ -201,6 +205,10 @@ python -m imagecb.cli ingest "C:\path\to\corpus"
 
 SQLite metadata and BM25 can stay; only the Chroma directory needs
 deleting.
+
+The caption-text dense lane needs no manual migration: the next ingest
+(or `python -m imagecb.cli repair-index`) backfills one text vector per
+already-indexed image from its stored caption.
 
 ### Ingest a corpus
 
@@ -475,6 +483,9 @@ the full list. Highlights:
 | `EMBEDDING_MODEL`           | Bedrock embedding model (default `amazon.titan-embed-image-v1`)                      |
 | `EMBEDDING_DIM`             | Titan output dimension: 256, 384, or 1024 (default `1024`)                           |
 | `RERANKER_MODEL`            | Bedrock rerank model (default `cohere.rerank-v3-5:0`)                                |
+| `CAPTION_TEXT_LANE_ENABLED` | Text-to-text dense lane over caption documents (default `true`)                      |
+| `TEXT_EMBEDDING_MODEL`      | Text embedding model for the caption-text lane (default `amazon.titan-embed-text-v2:0`) |
+| `TEXT_EMBEDDING_DIM`        | Text embedding dimension (default `1024`)                                            |
 | `AWS_REGION`                | AWS region for Bedrock (default `us-east-1`)                                         |
 | `AWS_BEARER_TOKEN_BEDROCK`  | Short-lived Bedrock API key (optional; otherwise use standard AWS credentials)       |
 | `DATA_DIR`                  | Root for all persisted state                                                         |
@@ -514,7 +525,7 @@ imagecb/
     bm25_index.py        (rank_bm25, persisted)
   retrieval/
     query_parser.py      (text -> QuerySpec)
-    hybrid.py            (filter + dense + sparse + RRF)
+    hybrid.py            (filter + visual dense + caption-text dense + BM25 + RRF)
     rerank.py            (Bedrock rerank + provenance formatting)
     session.py           (multi-turn state and follow-up context)
   web/

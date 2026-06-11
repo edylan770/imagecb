@@ -147,6 +147,10 @@ def status(
     typer.echo(
         f"Asset types missing: {report.missing_asset_type_count} / {report.total_records}"
     )
+    if SETTINGS.caption_text_lane_enabled:
+        typer.echo(
+            f"Caption-text vectors missing: {report.missing_text_vector_count} / {report.total_records}"
+        )
 
     has_issues = (
         report.missing_cache_count

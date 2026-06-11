@@ -16,6 +16,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from imagecb.caption.context import caption_context_from_record
+from imagecb.caption.document import caption_document_text
 from imagecb.caption.normalize import normalize_tags
 from imagecb.caption.pipeline import enrich_caption_search_terms
 from imagecb.caption.quality import (
@@ -27,7 +28,7 @@ from imagecb.caption.quality import (
 )
 from imagecb.caption.vocab import load_tag_vocab
 from imagecb.config import SETTINGS
-from imagecb.ingest import _chroma_metadata, _flush_chroma_batch
+from imagecb.ingest import _chroma_metadata, _flush_chroma_batch, embed_caption_document
 from imagecb.ingest_context import embed_context_from_record
 from imagecb.models.embedder import get_embedder
 from imagecb.models.vlm import CaptionJSON, get_captioner
@@ -56,6 +57,8 @@ class IndexHealthReport:
     recoverable_source_files: List[str] = field(default_factory=list)
     missing_asset_type_count: int = 0
     missing_asset_type_ids: List[str] = field(default_factory=list)
+    missing_text_vector_count: int = 0
+    missing_text_vector_ids: List[str] = field(default_factory=list)
     is_healthy: bool = True
     elapsed_sec: float = 0.0
 
@@ -130,6 +133,17 @@ def assess_index_health(*, include_weak: bool = False) -> IndexHealthReport:
 
     missing_chroma_ids = sorted(sqlite_ids - chroma_ids)
 
+    missing_text_vector_ids: List[str] = []
+    if SETTINGS.caption_text_lane_enabled:
+        try:
+            text_ids = vector_store.list_text_ids()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not read caption-text collection: %s", exc)
+            text_ids = set()
+        # Only records with a non-empty caption document can have a text vector.
+        embeddable = {r.image_id for r in records if caption_document_text(r).strip()}
+        missing_text_vector_ids = sorted(embeddable - text_ids)
+
     missing_cache_count = len(missing_cache_records)
     failed_caption_count = len(failed_caption_records)
     weak_caption_count = len(weak_caption_records)
@@ -175,6 +189,8 @@ def assess_index_health(*, include_weak: bool = False) -> IndexHealthReport:
         recoverable_source_files=sorted(recoverable_source_files),
         missing_asset_type_count=missing_asset_type_count,
         missing_asset_type_ids=missing_asset_type_ids,
+        missing_text_vector_count=len(missing_text_vector_ids),
+        missing_text_vector_ids=missing_text_vector_ids,
         is_healthy=is_healthy,
         elapsed_sec=elapsed,
     )
@@ -244,17 +260,30 @@ def _upsert_record_embedding(record: ImageRecord, embedding: np.ndarray) -> None
     )
 
 
+def refresh_text_vector(record: ImageRecord) -> bool:
+    """Re-embed the record's caption document into the text lane (fail-soft)."""
+    emb = embed_caption_document(record)
+    if emb is None:
+        return False
+    vector_store.upsert_text(
+        image_ids=[record.image_id],
+        embeddings=emb.reshape(1, -1),
+    )
+    return True
+
+
 def _apply_regenerated_caption(
     record: ImageRecord,
     caption: CaptionJSON,
     *,
     embedding: Optional[np.ndarray] = None,
 ) -> None:
-    """Persist caption fields and optionally refresh the Chroma vector."""
+    """Persist caption fields and refresh search vectors."""
     _apply_caption_to_record(record, caption)
     _persist_record(record)
     if embedding is not None:
         _upsert_record_embedding(record, embedding)
+    refresh_text_vector(record)
 
 
 def _caption_with_retry(record: ImageRecord, img: Image.Image) -> CaptionJSON:
@@ -313,6 +342,7 @@ def regenerate_caption(image_id: str, *, rebuild_bm25: bool = True) -> dict:
     emb = embedder.embed_image_with_context(img, ctx or None)
     _persist_record(record)
     _upsert_record_embedding(record, emb)
+    refresh_text_vector(record)
     if rebuild_bm25:
         bm25_index.rebuild_from_records(get_all_records())
 
@@ -345,6 +375,7 @@ def reindex_image(image_id: str, *, rebuild_bm25: bool = True) -> dict:
     ctx = embed_context_from_record(record)
     emb = embedder.embed_image_with_context(img, ctx or None)
     _upsert_record_embedding(record, emb)
+    refresh_text_vector(record)
     if rebuild_bm25:
         bm25_index.rebuild_from_records(get_all_records())
 
@@ -581,6 +612,64 @@ def reindex_embeddings(
         if chroma_batch:
             _flush_chroma_batch(list(chroma_batch))
 
+    if SETTINGS.caption_text_lane_enabled:
+        text_stats = backfill_text_vectors(
+            image_ids=[r.image_id for r in records], workers=workers
+        )
+        stats["text_vectors"] = text_stats
+
+    stats["elapsed_sec"] = round(time.perf_counter() - t0, 1)
+    return stats
+
+
+def backfill_text_vectors(
+    *,
+    image_ids: Optional[Sequence[str]] = None,
+    workers: Optional[int] = None,
+) -> dict:
+    """Embed caption documents into the text lane (no image loading)."""
+    workers = max(1, workers if workers is not None else SETTINGS.ingest_workers)
+    if image_ids is not None:
+        records = get_records(image_ids)
+    else:
+        records = get_all_records()
+    records = [r for r in records if caption_document_text(r).strip()]
+
+    stats = {
+        "records": len(records),
+        "embedded": 0,
+        "errors": 0,
+        "workers": workers,
+        "elapsed_sec": 0.0,
+    }
+    if not records or not SETTINGS.caption_text_lane_enabled:
+        return stats
+
+    t0 = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(refresh_text_vector, r): r for r in records}
+        pbar = tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc="Text vectors",
+            unit="img",
+            disable=not sys.stderr.isatty(),
+        )
+        for future in pbar:
+            try:
+                ok = future.result()
+            except Exception as exc:  # noqa: BLE001
+                ok = False
+                logger.warning(
+                    "Text vector backfill failed for %s: %s",
+                    futures[future].image_id,
+                    exc,
+                )
+            if ok:
+                stats["embedded"] += 1
+            else:
+                stats["errors"] += 1
+
     stats["elapsed_sec"] = round(time.perf_counter() - t0, 1)
     return stats
 
@@ -655,7 +744,11 @@ def repair_index_issues(
     t0 = time.perf_counter()
     rescan_stats = rescan_caption_quality()
     report = assess_index_health(include_weak=include_weak_captions)
-    if report.is_healthy and report.missing_asset_type_count == 0:
+    if (
+        report.is_healthy
+        and report.missing_asset_type_count == 0
+        and report.missing_text_vector_count == 0
+    ):
         logger.info("Post-ingest repair skipped: index is healthy")
         return {
             "skipped": True,
@@ -722,6 +815,15 @@ def repair_index_issues(
                 any_phase_ran = True
                 phases["vectors"] = reindex_embeddings(workers=workers, image_ids=reindex_ids)
 
+    if SETTINGS.caption_text_lane_enabled:
+        report = assess_index_health(include_weak=include_weak_captions)
+        if report.missing_text_vector_count > 0:
+            any_phase_ran = True
+            phases["text_vectors"] = backfill_text_vectors(
+                image_ids=report.missing_text_vector_ids,
+                workers=workers,
+            )
+
     if any_phase_ran:
         bm25_index.rebuild_from_records(get_all_records())
 
@@ -738,6 +840,7 @@ def repair_index_issues(
         + phases.get("weak_captions", {}).get("repaired", 0),
         "asset_types_backfilled": phases.get("asset_types", {}).get("updated", 0),
         "vectors_reindexed": phases.get("vectors", {}).get("reindexed", 0),
+        "text_vectors_backfilled": phases.get("text_vectors", {}).get("embedded", 0),
         "source_files_attempted": phases.get("cache", {}).get("source_files_attempted", 0),
         "unrecoverable": phases.get("cache", {}).get("unrecoverable", 0),
         "remaining_missing_cache": final.missing_cache_count,
@@ -779,6 +882,9 @@ def format_post_repair_summary(repair_stats: dict) -> str:
     vectors = repair_stats.get("vectors_reindexed", 0)
     if vectors:
         parts.append(f"re-indexed {vectors} vectors")
+    text_vectors = repair_stats.get("text_vectors_backfilled", 0)
+    if text_vectors:
+        parts.append(f"backfilled {text_vectors} caption-text vectors")
     unrecoverable = repair_stats.get("unrecoverable", 0)
     if unrecoverable:
         parts.append(f"{unrecoverable} unrecoverable (source file missing)")
