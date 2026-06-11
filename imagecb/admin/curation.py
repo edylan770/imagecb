@@ -44,6 +44,7 @@ def soft_delete_image(*, image_id: str, actor: str) -> None:
         row.deleted_by = actor
 
     vector_store.delete([image_id])
+    vector_store.delete_text([image_id])
     rebuild_bm25_active()
     append_audit(
         actor=actor,
@@ -86,6 +87,9 @@ def restore_image(*, image_id: str, actor: str) -> None:
         embeddings=emb,
         metadatas=[_chroma_metadata(record)],
     )
+    from imagecb.repair import refresh_text_vector
+
+    refresh_text_vector(record)
     rebuild_bm25_active()
     append_audit(
         actor=actor,

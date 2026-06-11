@@ -258,12 +258,8 @@ def chat(
         raise HTTPException(status_code=500, detail=format_query_error(exc)) from exc
 
     spec = ask_result.spec
-    results = ask_result.results
     notes = build_interpretation_notes(
         spec,
-        applied_refinement_pool=ask_result.applied_refinement_pool,
-        pool_size=ask_result.pool_size,
-        sticky_merged=ask_result.sticky_merged,
         min_match_percent=ask_result.min_match_percent,
         relaxed_min_score=ask_result.relaxed_min_score,
         dense_failed=ask_result.dense_failed,
@@ -323,9 +319,6 @@ def chat_stream(
     spec = ask_result.spec
     notes = build_interpretation_notes(
         spec,
-        applied_refinement_pool=ask_result.applied_refinement_pool,
-        pool_size=ask_result.pool_size,
-        sticky_merged=ask_result.sticky_merged,
         min_match_percent=ask_result.min_match_percent,
         relaxed_min_score=ask_result.relaxed_min_score,
         dense_failed=ask_result.dense_failed,

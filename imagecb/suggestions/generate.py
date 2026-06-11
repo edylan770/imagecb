@@ -25,9 +25,8 @@ Rules:
 - Each suggestion is a short natural-language phrase the user can click to search (under 80 chars).
 - Use ONLY topics, tags, captions, and recommended search phrases present in the corpus context. \
 Never invent assets or topics.
-- Prefer semantic, topic-based search phrases drawn from tags, captions, and recommended search phrases.
-- NEVER suggest "images from [filename]", "slides from [filename]", or any filename-only filter query.
-- Source filenames in the corpus context are for grounding only — do not use them in suggestions.
+- Never reference source filenames ("images from X.pptx"); filenames in the context are for \
+grounding only.
 - Do not include markdown, code fences, or explanation outside the JSON object."""
 
 ONBOARDING_SUGGESTIONS = [

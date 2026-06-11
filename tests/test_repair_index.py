@@ -183,7 +183,7 @@ def test_repair_index_issues_skips_caption_phases():
         "b": _record("b", image_path="/cache/b.png"),
     }
 
-    with patch("imagecb.repair.assess_index_health", side_effect=[unhealthy, unhealthy, final]), patch(
+    with patch("imagecb.repair.assess_index_health", side_effect=[unhealthy, unhealthy, unhealthy, final]), patch(
         "imagecb.repair.repair_failed_captions"
     ) as cap_mock, patch(
         "imagecb.repair.reindex_embeddings", return_value={"reindexed": 1}

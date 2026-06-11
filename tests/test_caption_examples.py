@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from imagecb.caption.examples import CAPTION_FEW_SHOT_EXAMPLES, format_few_shot_for_prompt
-from imagecb.caption.lexicon import normalize_tag
+from imagecb.caption.normalize import normalize_tag
 from imagecb.caption.schema import validate_caption_dict
 from imagecb.models.vlm import _build_caption_user_prompt
 
@@ -26,7 +26,7 @@ def test_format_few_shot_for_prompt_contains_all_labels():
 
 def test_build_caption_user_prompt_includes_examples():
     prompt = _build_caption_user_prompt(context=None, source_file=None)
-    assert "Style reference" in prompt
+    assert "Match the granularity of these examples" in prompt
     assert "Example 1" in prompt
     assert "quarterly sales chart" in prompt.lower()
     assert "Asset type taxonomy" in prompt

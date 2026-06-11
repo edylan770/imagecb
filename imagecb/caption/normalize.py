@@ -1,44 +1,44 @@
-"""Post-generation tag normalization: case, plurality, synonym map."""
+"""Tag and token normalization: case, whitespace, plurality."""
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Set
+import re
+from typing import Dict, List, Set
 
-from imagecb.caption.lexicon import (
-    SearchLexicon,
-    build_search_lexicon,
-    load_seed_synonyms,
-    normalize_tag,
+_PLURAL_EXCEPTIONS = frozenset(
+    {
+        "news",
+        "series",
+        "status",
+        "business",
+        "graphics",
+        "analytics",
+        "sales",
+        "process",
+    }
 )
 
-_SEED_SYNONYMS = load_seed_synonyms()
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 
-def _canonical_via_synonym(tag: str, synonym_map: Dict[str, str]) -> str:
-    normalized = normalize_tag(tag)
-    if not normalized:
+def normalize_tag(term: str) -> str:
+    """Lowercase, collapse whitespace, and singularize a tag-like term."""
+    t = (term or "").strip().lower()
+    t = re.sub(r"\s+", " ", t)
+    if not t:
         return ""
-    if normalized in synonym_map:
-        return normalize_tag(synonym_map[normalized])
-    return normalized
+    if t.endswith("ies") and len(t) > 4:
+        candidate = t[:-3] + "y"
+        if candidate not in _PLURAL_EXCEPTIONS:
+            t = candidate
+    elif t.endswith("s") and len(t) > 3 and not t.endswith("ss") and t not in _PLURAL_EXCEPTIONS:
+        t = t[:-1]
+    return t
 
 
-def _resolve_to_vocab(
-    canonical: str,
-    vocab_keys: Set[str],
-    vocab_normalized: Dict[str, str],
-    lexicon: Optional[SearchLexicon],
-) -> str:
-    """Pick a corpus vocab term from the synonym group when possible."""
-    if canonical in vocab_keys:
-        return vocab_normalized[canonical]
-    if lexicon is None:
-        return canonical
-    group = lexicon.synonym_group(canonical)
-    vocab_hits = group & vocab_keys
-    if vocab_hits:
-        return vocab_normalized[min(vocab_hits)]
-    return canonical
+def tokenize_text(text: str) -> List[str]:
+    """Lowercase alphanumeric tokens from free text."""
+    return _TOKEN_RE.findall((text or "").lower())
 
 
 def normalize_tags(
@@ -46,24 +46,18 @@ def normalize_tags(
     vocab: Set[str],
     *,
     min_length: int = 2,
-    lexicon: Optional[SearchLexicon] = None,
 ) -> List[str]:
-    """Map tags to canonical forms; prefer vocab terms when synonym resolves to one."""
-    if lexicon is None:
-        lexicon = build_search_lexicon()
-
-    vocab_normalized = {normalize_tag(v): v for v in vocab}
-    vocab_keys = set(vocab_normalized.keys())
+    """Map tags to canonical forms, preferring existing vocab casing."""
+    vocab_normalized: Dict[str, str] = {normalize_tag(v): v for v in vocab}
 
     seen: set[str] = set()
     out: List[str] = []
 
     for raw in raw_tags:
-        canonical = _canonical_via_synonym(raw, _SEED_SYNONYMS)
+        canonical = normalize_tag(raw)
         if not canonical or len(canonical) < min_length:
             continue
-        canonical = _resolve_to_vocab(canonical, vocab_keys, vocab_normalized, lexicon)
-        canonical = normalize_tag(canonical)
+        canonical = normalize_tag(vocab_normalized.get(canonical, canonical))
         if canonical in seen:
             continue
         seen.add(canonical)
@@ -72,4 +66,4 @@ def normalize_tags(
     return out
 
 
-__all__ = ["normalize_tag", "normalize_tags"]
+__all__ = ["normalize_tag", "normalize_tags", "tokenize_text"]

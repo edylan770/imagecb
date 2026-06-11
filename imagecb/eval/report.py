@@ -6,7 +6,7 @@ import json
 from dataclasses import asdict
 from typing import Any, Dict, List, Sequence
 
-from imagecb.eval.metrics import AggregateMetrics, CaseMetrics
+from imagecb.eval.metrics import AggregateMetrics
 from imagecb.eval.runner import EvalRunResult
 
 

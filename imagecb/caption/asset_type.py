@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List, Sequence
+from typing import List, Sequence
 
-from imagecb.caption.lexicon import normalize_tag
+from imagecb.caption.normalize import normalize_tag
 
 ASSET_TYPES: tuple[str, ...] = (
     "photo",

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import List, Set
 
 from imagecb.caption.asset_type import ASSET_TYPE_SET, normalize_asset_type, resolve_query_asset_type
-from imagecb.caption.lexicon import tokenize_text
+from imagecb.caption.normalize import tokenize_text
 from imagecb.config import SETTINGS
 from imagecb.retrieval.query_build import is_short_query
 from imagecb.retrieval.query_parser import QuerySpec

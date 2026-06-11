@@ -43,7 +43,6 @@ class QuerySpec:
     top_k: int = 10
     is_refinement: bool = False
     raw_text: str = ""
-    expanded_keywords: List[str] = field(default_factory=list)
     sanitization_notes: List[str] = field(default_factory=list)
 
 

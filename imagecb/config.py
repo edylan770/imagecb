@@ -65,6 +65,19 @@ class Settings:
         or "cohere.rerank-v3-5:0"
     )
 
+    # Caption-text dense lane: text-to-text retrieval over caption documents.
+    caption_text_lane_enabled: bool = field(
+        default_factory=lambda: (_env("CAPTION_TEXT_LANE_ENABLED", "true") or "true").lower()
+        in ("1", "true", "yes", "on")
+    )
+    text_embedding_model: str = field(
+        default_factory=lambda: _env("TEXT_EMBEDDING_MODEL", "amazon.titan-embed-text-v2:0")
+        or "amazon.titan-embed-text-v2:0"
+    )
+    text_embedding_dim: int = field(
+        default_factory=lambda: int(_env("TEXT_EMBEDDING_DIM", "1024") or "1024")
+    )
+
     # Storage paths
     data_dir: Path = field(default_factory=lambda: _abspath(_env("DATA_DIR", "./data") or "./data"))
     chroma_dir: Path = field(default_factory=lambda: _abspath(_env("CHROMA_DIR", "./data/chroma") or "./data/chroma"))
@@ -112,13 +125,6 @@ class Settings:
     suggestions_limit: int = field(
         default_factory=lambda: int(_env("SUGGESTIONS_LIMIT", "4") or "4")
     )
-    acronym_cache_path: Path = field(
-        default_factory=lambda: _abspath(
-            _env("ACRONYM_CACHE_PATH")
-            or str(_abspath(_env("DATA_DIR", "./data") or "./data") / "acronym_cache.json")
-        )
-    )
-
     # Ingest performance
     ingest_workers: int = field(
         default_factory=lambda: int(_env("INGEST_WORKERS", "4") or "4")

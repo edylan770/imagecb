@@ -147,6 +147,10 @@ def status(
     typer.echo(
         f"Asset types missing: {report.missing_asset_type_count} / {report.total_records}"
     )
+    if SETTINGS.caption_text_lane_enabled:
+        typer.echo(
+            f"Caption-text vectors missing: {report.missing_text_vector_count} / {report.total_records}"
+        )
 
     has_issues = (
         report.missing_cache_count
@@ -436,7 +440,6 @@ def freeze_asset_types_cmd(
 ) -> None:
     """Validate audit and freeze the taxonomy manifest for this corpus."""
     _configure_logging(verbose)
-    from imagecb.caption.asset_type import ASSET_TYPE_TAXONOMY_VERSION
     from imagecb.caption.asset_type_audit import freeze_asset_types
 
     try:
@@ -450,8 +453,8 @@ def freeze_asset_types_cmd(
         f"({result['total_records']} records, other={result['other_pct']:.1f}%)."
     )
     typer.echo(
-        f"Do not change ASSET_TYPES without bumping version and running "
-        f"backfill-asset-types --all."
+        "Do not change ASSET_TYPES without bumping version and running "
+        "backfill-asset-types --all."
     )
     if result.get("warnings") and verbose:
         typer.echo("Warnings recorded in snapshot:")
@@ -485,15 +488,12 @@ def reindex_embeddings_cmd(
 @app.command(name="parse-query")
 def parse_query_cmd(text: str = typer.Argument(..., help="A natural-language query to parse.")) -> None:
     """Debug helper: print the parsed QuerySpec for TEXT."""
-    from imagecb.retrieval.query_expand import expand_query_spec
     from imagecb.retrieval.query_parser import parse_query
 
     spec = parse_query(text)
-    spec = expand_query_spec(spec, use_llm=False)
     typer.echo(
         f"semantic_query : {spec.semantic_query}\n"
         f"must_have      : {spec.must_have_keywords}\n"
-        f"expanded       : {spec.expanded_keywords}\n"
         f"must_avoid     : {spec.must_avoid_keywords}\n"
         f"file_types     : {spec.source_filters.file_types}\n"
         f"asset_types    : {spec.source_filters.asset_types}\n"
@@ -504,33 +504,6 @@ def parse_query_cmd(text: str = typer.Argument(..., help="A natural-language que
         f"top_k          : {spec.top_k}\n"
         f"is_refinement  : {spec.is_refinement}"
     )
-
-
-@app.command(name="expand-query")
-def expand_query_cmd(
-    text: str = typer.Argument(..., help="Query text to expand via the search lexicon."),
-    use_llm: bool = typer.Option(
-        False,
-        "--use-llm",
-        help="Call the query LLM for unrecognized acronyms.",
-    ),
-) -> None:
-    """Debug helper: show synonym/acronym expansion for TEXT."""
-    from imagecb.retrieval.query_expand import expand_query_text
-
-    result = expand_query_text(text, use_llm=use_llm)
-    typer.echo(f"original         : {result.original}")
-    typer.echo(f"tokens           : {result.tokens}")
-    if result.acronym_expansions:
-        typer.echo(f"acronym_expansions:")
-        for k, v in result.acronym_expansions.items():
-            typer.echo(f"  {k} -> {v}")
-    if result.synonym_matches:
-        typer.echo(f"synonym_matches:")
-        for k, vals in result.synonym_matches.items():
-            typer.echo(f"  {k} -> {vals}")
-    typer.echo(f"expanded_terms   : {result.all_terms}")
-    typer.echo(f"dense_query      : {' '.join([result.original] + result.all_terms)}")
 
 
 def _parse_k_values(raw: str) -> list[int]:

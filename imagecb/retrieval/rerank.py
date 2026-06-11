@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
 _RERANK_MAX_TAGS = 8
 _RERANK_MAX_RECOMMENDED_CASES = 3
+_RERANK_MAX_ALIASES = 8
+_RERANK_MAX_OCR_CHARS = 600
 
 
 @dataclass
@@ -74,14 +76,19 @@ def _candidate_text(r: ImageRecord) -> str:
         r.slide_title,
         r.slide_notes,
         r.slide_body_text,
-        r.ocr_text,
     ):
         if v:
             parts.append(v)
 
+    ocr = (r.ocr_text or "").strip()
+    if ocr:
+        parts.append(ocr[:_RERANK_MAX_OCR_CHARS])
+
     for v in (
         r.image_name,
         r.caption_short,
+        r.caption_detailed,
+        r.use_case,
         r.theme,
     ):
         if v:
@@ -90,6 +97,10 @@ def _candidate_text(r: ImageRecord) -> str:
     tags = deserialize_list(r.tags_json)
     if tags:
         parts.append("tags: " + ", ".join(tags[:_RERANK_MAX_TAGS]))
+
+    aliases = deserialize_list(r.search_aliases_json)
+    if aliases:
+        parts.append("aliases: " + ", ".join(aliases[:_RERANK_MAX_ALIASES]))
 
     cases = deserialize_list(r.recommended_cases_json)
     if cases:
